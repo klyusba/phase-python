@@ -1,0 +1,59 @@
+{
+  "forest": {
+    "name": "Forest",
+    "mana_cost": {
+      "type": "Cost",
+      "shards": [],
+      "generic": 0
+    },
+    "card_type": {
+      "supertypes": ["Basic"],
+      "core_types": ["Land"],
+      "subtypes": ["Forest"]
+    },
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "defense": null,
+    "oracle_text": "({T}: Add {G}.)",
+    "non_ability_text": null,
+    "flavor_name": null,
+    "keywords": [],
+    "abilities": [
+      {
+        "kind": "Activated",
+        "effect": {
+          "type": "Mana",
+          "produced": {
+            "type": "Fixed",
+            "colors": ["Green"]
+          }
+        },
+        "cost": {
+          "type": "Tap"
+        },
+        "sub_ability": null,
+        "duration": null,
+        "description": null,
+        "target_prompt": null,
+        "sorcery_speed": false,
+        "condition": null,
+        "optional_targeting": false,
+        "optional": false,
+        "forward_result": false
+      }
+    ],
+    "triggers": [],
+    "static_abilities": [],
+    "replacements": [],
+    "color_override": null,
+    "scryfall_oracle_id": "b34bb2dc-c1af-4d77-b0b3-a0fb342a5fc6",
+    "legalities": {
+      "commander": "legal",
+      "modern": "legal",
+      "pauper": "legal",
+      "pioneer": "legal",
+      "standard": "legal"
+    }
+  }
+}

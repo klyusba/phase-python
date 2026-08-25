@@ -1,0 +1,13 @@
+[build-system]
+requires = ["maturin>=1.8,<2"]
+build-backend = "maturin"
+
+[project]
+name = "phase"
+version = "0.1.0"
+description = "Python bindings for the phase.rs Magic: The Gathering rules engine"
+requires-python = ">=3.10"
+
+[tool.maturin]
+features = ["extension-module"]
+module-name = "phase"

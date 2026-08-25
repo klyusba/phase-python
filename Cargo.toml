@@ -1,0 +1,20 @@
+[package]
+name = "phase"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Python bindings for the phase.rs Magic: The Gathering rules engine"
+repository = "https://github.com/phase-rs/phase"
+
+[lib]
+name = "phase"
+crate-type = ["cdylib"]
+
+[dependencies]
+engine = { package = "phase-engine", git = "https://github.com/phase-rs/phase" }
+pyo3 = { git = "https://github.com/pyo3/pyo3" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+extension-module = ["pyo3/extension-module"]
