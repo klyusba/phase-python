@@ -23,7 +23,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use engine::ai_support::legal_actions;
+use engine::database::mtgjson::AtomicCard;
+use engine::database::synthesis::{
+    build_oracle_face as engine_build_oracle_face,
+    build_oracle_face_multi as engine_build_oracle_face_multi,
+};
 use engine::database::CardDatabase;
+use engine::types::card::CardFace;
 use engine::game::engine::recover_orphaned_resolve_all;
 use engine::game::{
     apply, finalize_public_state, load_and_hydrate_decks, rehydrate_game_from_card_db,
@@ -234,6 +240,32 @@ fn action_kind(action: &EngineAction) -> String {
     format!("{:?}", GameActionKind::from(action))
 }
 
+/// Build a `CardFace` from MTGJSON atomic card data.
+///
+/// `mtgjson` should be a dict matching the engine `AtomicCard` shape
+/// (`name`, `mana_cost`, `types`, `text`, `layout`, etc.).
+/// `oracle_id` is an optional Scryfall oracle ID.
+pub fn build_oracle_face(
+    mtgjson: Bound<'_, PyAny>,
+    oracle_id: Option<String>,
+) -> PyResult<Bound<'_, PyAny>> {
+    let atomic: AtomicCard = from_py(&mtgjson)?;
+    let face = engine_build_oracle_face(&atomic, oracle_id);
+    to_py(mtgjson.py(), &face)
+}
+
+/// Build a `CardFace` for a multi-face card, skipping MTGJSON keywords.
+///
+/// See [`build_oracle_face`] for parameter details.
+pub fn build_oracle_face_multi(
+    mtgjson: Bound<'_, PyAny>,
+    oracle_id: Option<String>,
+) -> PyResult<Bound<'_, PyAny>> {
+    let atomic: AtomicCard = from_py(&mtgjson)?;
+    let face = engine_build_oracle_face_multi(&atomic, oracle_id);
+    to_py(mtgjson.py(), &face)
+}
+
 /// Loaded card database used to create games.
 #[pyclass(module = "phase")]
 struct Engine {
@@ -430,7 +462,7 @@ impl Game {
 
     fn __repr__(&self) -> String {
         format!(
-            "Game(turn={}, phase={}, priority={})",
+            "Game(turn={}, phase={:?}, priority={})",
             self.state.turn_number, self.state.phase, self.state.priority_player.0
         )
     }
@@ -441,6 +473,8 @@ fn phase(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Engine>()?;
     m.add_class::<Game>()?;
     m.add_class::<GameAction>()?;
+    m.add_function(pyo3::wrap_pyfunction!(build_oracle_face, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(build_oracle_face_multi, m)?)?;
     Ok(())
 }
 
