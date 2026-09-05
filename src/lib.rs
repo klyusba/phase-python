@@ -29,21 +29,22 @@ use engine::database::synthesis::{
     build_oracle_face_multi as engine_build_oracle_face_multi,
 };
 use engine::database::CardDatabase;
-use engine::types::card::CardFace;
-use engine::game::engine::recover_orphaned_resolve_all;
 use engine::game::{
-    apply, finalize_public_state, load_and_hydrate_decks, rehydrate_game_from_card_db,
-    resolve_deck_list, start_game, start_game_with_starting_player,
-    validate_name_deck_for_format_full, DeckList, PlayerDeckList,
+    apply, load_and_hydrate_decks, rehydrate_game_from_card_db, resolve_deck_list, start_game,
+    start_game_with_starting_player, validate_name_deck_for_format_full, DeckList, PlayerDeckList,
 };
 use engine::types::actions::{GameAction as EngineAction, GameActionKind};
 use engine::types::format::{FormatConfig, GameFormat};
-use engine::types::game_state::{ActionResult, GameState, PersistedGameState};
+use engine::types::game_state::{
+    ActionResult as EngineActionResult, GameState, PersistedGameState, PersistedRestoreFinalization,
+};
+use engine::types::identifiers::ObjectId;
 use engine::types::match_config::MatchConfig;
 use engine::types::player::PlayerId;
 use pyo3::exceptions::PyValueError;
+use pyo3::ffi::c_str;
 use pyo3::prelude::*;
-use pyo3::types::PyAny;
+use pyo3::types::{PyAny, PyDict};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -56,7 +57,7 @@ fn to_py<'py, T: Serialize>(py: Python<'py>, value: &T) -> PyResult<Bound<'py, P
     py.import("json")?.call_method1("loads", (json,))
 }
 
-fn from_py<'py, T: DeserializeOwned>(value: &Bound<'py, PyAny>) -> PyResult<T> {
+fn from_py<T: DeserializeOwned>(value: &Bound<'_, PyAny>) -> PyResult<T> {
     let json: String = value
         .py()
         .import("json")?
@@ -84,7 +85,7 @@ fn validate_seat(
     db: &CardDatabase,
     seat: &str,
     deck: &PlayerDeckList,
-    format: GameFormat,
+    format_config: &FormatConfig,
     match_type: Option<engine::types::match_config::MatchType>,
     player_count: usize,
 ) -> Result<(), String> {
@@ -97,7 +98,8 @@ fn validate_seat(
         &deck.planar_deck,
         &deck.scheme_deck,
         &deck.signature_spell,
-        format,
+        &[],
+        format_config,
         match_type,
         player_count,
     )
@@ -129,23 +131,20 @@ fn start_match(
     format_config.validate_for_player_count(player_count_u8)?;
     format_config.reject_unimplemented_range_of_influence()?;
 
-    let game_format = format_config.format;
-    let mut state = GameState::new(format_config, player_count_u8, seed);
-    state.set_match_config(match_config);
-
     let deck_list = DeckList {
         player,
         opponent,
         ai_decks: extra_players,
         ai_difficulties: Vec::new(),
+        draft_set_codes: Vec::new(),
     };
 
-    if !game_format.supplies_fixed_deck() {
+    if !format_config.format.supplies_fixed_deck() {
         validate_seat(
             db,
             "player",
             &deck_list.player,
-            game_format,
+            &format_config,
             Some(match_config.match_type),
             player_count,
         )?;
@@ -153,7 +152,7 @@ fn start_match(
             db,
             "opponent",
             &deck_list.opponent,
-            game_format,
+            &format_config,
             Some(match_config.match_type),
             player_count,
         )?;
@@ -162,12 +161,15 @@ fn start_match(
                 db,
                 &format!("player {}", index + 2),
                 deck,
-                game_format,
+                &format_config,
                 Some(match_config.match_type),
                 player_count,
             )?;
         }
     }
+
+    let mut state = GameState::new(format_config, player_count_u8, seed);
+    state.set_match_config(match_config);
 
     let payload = resolve_deck_list(db, &deck_list);
     load_and_hydrate_decks(&mut state, &payload, Some(db));
@@ -207,18 +209,17 @@ fn restore_match(
     db: &CardDatabase,
     serialized: serde_json::Value,
 ) -> Result<Box<GameState>, String> {
-    let mut state = serde_json::from_value::<PersistedGameState>(serialized)
-        .map(PersistedGameState::into_game_state)
+    let persisted = serde_json::from_value::<PersistedGameState>(serialized)
         .map_err(|error| format!("failed to deserialize GameState: {error}"))?;
-    state
-        .format_config
-        .reject_unimplemented_range_of_influence()
+    let prepared = persisted
+        .prepare_for_restore(PersistedRestoreFinalization::DeferUntilRehydrated)
         .map_err(|error| format!("failed to restore GameState: {error}"))?;
-    rehydrate_game_from_card_db(&mut state, db);
-    engine::game::combat::refresh_combat_declaration_waiting_for(&mut state);
-    state.rehydrate_rng();
-    finalize_public_state(&mut state);
-    recover_orphaned_resolve_all(&mut state);
+    let state = prepared
+        .finalize_after_rehydration(|state| {
+            rehydrate_game_from_card_db(state, db);
+            Ok(())
+        })
+        .map_err(|error| format!("failed to restore GameState: {error}"))?;
     Ok(Box::new(state))
 }
 
@@ -245,6 +246,7 @@ fn action_kind(action: &EngineAction) -> String {
 /// `mtgjson` should be a dict matching the engine `AtomicCard` shape
 /// (`name`, `mana_cost`, `types`, `text`, `layout`, etc.).
 /// `oracle_id` is an optional Scryfall oracle ID.
+#[pyfunction]
 pub fn build_oracle_face(
     mtgjson: Bound<'_, PyAny>,
     oracle_id: Option<String>,
@@ -257,6 +259,7 @@ pub fn build_oracle_face(
 /// Build a `CardFace` for a multi-face card, skipping MTGJSON keywords.
 ///
 /// See [`build_oracle_face`] for parameter details.
+#[pyfunction]
 pub fn build_oracle_face_multi(
     mtgjson: Bound<'_, PyAny>,
     oracle_id: Option<String>,
@@ -328,9 +331,9 @@ impl Engine {
             .iter()
             .map(parse_player_deck)
             .collect::<PyResult<Vec<_>>>()?;
-        let format_config = match format_config {
+        let format_config: FormatConfig = match format_config {
             Some(value) => from_py(&value)?,
-            None => FormatConfig::for_format(parse_format(format)?),
+            None => FormatConfig::for_format(parse_format(format)?).map_err(py_err)?,
         };
         let match_config = match match_config {
             Some(value) => from_py(&value)?,
@@ -373,7 +376,7 @@ struct GameAction {
 }
 
 #[pymethods]
-impl GameAction {  /// TODO bring each action kind as a python Class
+impl GameAction {
     /// Build from the tagged JSON dict (`{"type": "...", "data": ...}`).
     #[staticmethod]
     fn from_dict(value: Bound<'_, PyAny>) -> PyResult<Self> {
@@ -405,6 +408,56 @@ impl GameAction {  /// TODO bring each action kind as a python Class
     }
 }
 
+/// Native result of applying one or more actions.
+///
+/// Event and prompt values are converted only when their getters are read.
+#[pyclass(name = "ActionResult", module = "phase", frozen)]
+struct ActionResult {
+    inner: EngineActionResult,
+    fast_forwarded: usize,
+}
+
+#[pymethods]
+impl ActionResult {
+    /// Events emitted by the requested action and any fast-forwarded passes.
+    #[getter]
+    fn events<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        to_py(py, &self.inner.events)
+    }
+
+    /// Prompt active after all actions represented by this result.
+    #[getter]
+    fn waiting_for<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        to_py(py, &self.inner.waiting_for)
+    }
+
+    /// Game log entries emitted by the represented actions.
+    #[getter]
+    fn log_entries<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        to_py(py, &self.inner.log_entries)
+    }
+
+    /// Number of automatic `PassPriority` actions applied after the requested action.
+    #[getter]
+    fn fast_forwarded(&self) -> usize {
+        self.fast_forwarded
+    }
+
+    /// Convert to the engine's JSON-compatible result shape.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        to_py(py, &self.inner)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ActionResult(events={}, log_entries={}, fast_forwarded={})",
+            self.inner.events.len(),
+            self.inner.log_entries.len(),
+            self.fast_forwarded
+        )
+    }
+}
+
 /// A started game: inspect legal actions, apply one, and read state.
 #[pyclass(module = "phase")]
 struct Game {
@@ -428,17 +481,39 @@ impl Game {
     ///
     /// `action` should be a [`GameAction`] from [`Game::actions`]. A tagged
     /// JSON dict is still accepted.
+    #[pyo3(signature = (actor, action, *, fast_forward = false))]
     fn apply<'py>(
         &mut self,
-        py: Python<'py>,
         actor: u8,
         action: Bound<'py, PyAny>,
-        /// TODO skip all phases with single option = PassPriority
-    ) -> PyResult<Bound<'py, PyAny>> {
+        fast_forward: bool,
+    ) -> PyResult<ActionResult> {
         let action = parse_action(&action)?;
-        let result: ActionResult =
+        let mut result: EngineActionResult =
             apply(&mut self.state, PlayerId(actor), action).map_err(py_err)?;
-        to_py(py, &result)  /// TODO do not use json for ActionResult
+        let mut fast_forwarded = 0;
+
+        if fast_forward {
+            loop {
+                let actions = legal_actions(&self.state);
+                if actions.len() != 1 || !matches!(actions[0], EngineAction::PassPriority) {
+                    break;
+                }
+
+                let actor = self.state.priority_player;
+                let next =
+                    apply(&mut self.state, actor, EngineAction::PassPriority).map_err(py_err)?;
+                result.events.extend(next.events);
+                result.log_entries.extend(next.log_entries);
+                result.waiting_for = next.waiting_for;
+                fast_forwarded += 1;
+            }
+        }
+
+        Ok(ActionResult {
+            inner: result,
+            fast_forwarded,
+        })
     }
 
     /// Full persisted `GameState` as a Python dict (same serde shape as WASM export).
@@ -458,7 +533,94 @@ impl Game {
         self.state.priority_player.0
     }
 
-    /// TODO explore state: battlefield, hand, etc
+    /// Current turn number.
+    #[getter]
+    fn turn(&self) -> u32 {
+        self.state.turn_number
+    }
+
+    /// Current phase name.
+    #[getter]
+    fn phase(&self) -> String {
+        format!("{:?}", self.state.phase)
+    }
+
+    /// Public player state for `seat`.
+    fn player<'py>(&self, py: Python<'py>, seat: u8) -> PyResult<Bound<'py, PyAny>> {
+        let player = self
+            .state
+            .players
+            .get(seat as usize)
+            .ok_or_else(|| py_err(format!("unknown player seat {seat}")))?;
+        to_py(py, player)
+    }
+
+    /// Objects currently on the battlefield.
+    fn battlefield<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let objects: Vec<_> = self
+            .state
+            .battlefield
+            .iter()
+            .filter_map(|id| self.state.objects.get(id))
+            .collect();
+        to_py(py, &objects)
+    }
+
+    /// Objects in `seat`'s hand.
+    fn hand<'py>(&self, py: Python<'py>, seat: u8) -> PyResult<Bound<'py, PyAny>> {
+        let player = self
+            .state
+            .players
+            .get(seat as usize)
+            .ok_or_else(|| py_err(format!("unknown player seat {seat}")))?;
+        let objects: Vec<_> = player
+            .hand
+            .iter()
+            .filter_map(|id| self.state.objects.get(id))
+            .collect();
+        to_py(py, &objects)
+    }
+
+    /// Objects in `seat`'s graveyard.
+    fn graveyard<'py>(&self, py: Python<'py>, seat: u8) -> PyResult<Bound<'py, PyAny>> {
+        let player = self
+            .state
+            .players
+            .get(seat as usize)
+            .ok_or_else(|| py_err(format!("unknown player seat {seat}")))?;
+        let objects: Vec<_> = player
+            .graveyard
+            .iter()
+            .filter_map(|id| self.state.objects.get(id))
+            .collect();
+        to_py(py, &objects)
+    }
+
+    /// Objects in exile.
+    fn exile<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let objects: Vec<_> = self
+            .state
+            .exile
+            .iter()
+            .filter_map(|id| self.state.objects.get(id))
+            .collect();
+        to_py(py, &objects)
+    }
+
+    /// Current stack entries.
+    fn stack<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        to_py(py, &self.state.stack)
+    }
+
+    /// Look up one game object by its numeric object ID.
+    fn object<'py>(&self, py: Python<'py>, object_id: u64) -> PyResult<Bound<'py, PyAny>> {
+        let object = self
+            .state
+            .objects
+            .get(&ObjectId(object_id))
+            .ok_or_else(|| py_err(format!("unknown object id {object_id}")))?;
+        to_py(py, object)
+    }
 
     fn __repr__(&self) -> String {
         format!(
@@ -468,13 +630,198 @@ impl Game {
     }
 }
 
+const ACTION_KINDS: &[&str] = &[
+    "PassPriority",
+    "ChooseMeldPair",
+    "ChooseEntryAttackTarget",
+    "PlayLand",
+    "CastSpell",
+    "Foretell",
+    "ActivateAbility",
+    "DeclareAttackers",
+    "DeclareBlockers",
+    "ChooseUntap",
+    "ChooseExert",
+    "ChooseEnlist",
+    "ChooseClashOpponent",
+    "ChooseZoneOpponentChooser",
+    "ChoosePileOpponent",
+    "ChooseAnnouncingOpponent",
+    "ChooseGiftRecipient",
+    "ChooseAssistPlayer",
+    "CommitAssistPayment",
+    "MulliganDecision",
+    "ReorderHand",
+    "TapLandForMana",
+    "ActivateManaSource",
+    "BackToManaPayment",
+    "UntapLandForMana",
+    "SpendPoolMana",
+    "UnspendPoolMana",
+    "SelectCards",
+    "ChooseRemoveCounterCostDistribution",
+    "SelectCoinFlips",
+    "ChooseOutsideGameCards",
+    "SelectTargets",
+    "ChooseTarget",
+    "ChooseReplacement",
+    "ChooseEntryController",
+    "OrderTriggers",
+    "CancelCast",
+    "Equip",
+    "CrewVehicle",
+    "ActivateStation",
+    "SaddleMount",
+    "Transform",
+    "PlayFaceDown",
+    "TurnFaceUp",
+    "SubmitSideboard",
+    "ChoosePlayDraw",
+    "ChooseOption",
+    "SubmitVoteCandidate",
+    "SubmitSpellbookDraft",
+    "SubmitPilePartition",
+    "ChoosePile",
+    "ChooseBranch",
+    "SubmitLifeRedistribution",
+    "ChooseDamageSource",
+    "SelectModes",
+    "DecideOptionalCost",
+    "ChooseAdventureFace",
+    "ChooseModalFace",
+    "ChooseAlternativeCast",
+    "ChooseCastingVariant",
+    "KeepAllCopyTargets",
+    "ChoosePermanentTypeSlot",
+    "ActivateNinjutsu",
+    "CastSpellAsSneak",
+    "CastSpellAsWebSlinging",
+    "CastSpellForFree",
+    "CastSpellAsMiracle",
+    "CastSpellAsMadness",
+    "DecideOptionalEffect",
+    "ChooseResolutionOptionalPaymentBranch",
+    "RespondToSpliceOffer",
+    "DecideOptionalEffectAndRemember",
+    "PayUnlessCost",
+    "ChooseUnlessCostBranch",
+    "ChooseActivationCostBranch",
+    "PayCombatTax",
+    "ChooseRingBearer",
+    "ChoosePair",
+    "ChooseDungeon",
+    "ChooseDungeonRoom",
+    "UnlockRoomDoor",
+    "RollPlanarDie",
+    "ChooseRoomDoor",
+    "TapForConvoke",
+    "HarmonizeTap",
+    "DeclareCompanion",
+    "CompanionToHand",
+    "DiscoverChoice",
+    "GraveyardPaidCastChoice",
+    "CascadeChoice",
+    "RippleChoice",
+    "FreeCastWindowChoice",
+    "ChooseTopOrBottom",
+    "ChooseMutateMergeSide",
+    "CipherEncode",
+    "ChooseLegend",
+    "ChooseBattleProtector",
+    "SetAutoPass",
+    "CancelAutoPass",
+    "SetPhaseStops",
+    "SetPriorityPassingMode",
+    "SetPriorityYield",
+    "SetMayTriggerAutoChoice",
+    "SetTriggerOrderTemplate",
+    "AssignCombatDamage",
+    "AssignBlockerDamage",
+    "DistributeAmong",
+    "ChooseCounterMoveDistribution",
+    "ChooseCountersToRemove",
+    "SubmitPayAmount",
+    "RetargetSpell",
+    "LearnDecision",
+    "SelectCategoryPermanents",
+    "ChooseKeptCreatures",
+    "ChooseKeptPermanents",
+    "ChooseX",
+    "SubmitPhyrexianChoices",
+    "ChooseManaColor",
+    "PayManaAbilityMana",
+    "CastPreparedCopy",
+    "ChooseSpecializeColor",
+    "CastParadigmCopy",
+    "PassParadigmOffer",
+    "Debug",
+    "GrantDebugPermission",
+    "RevokeDebugPermission",
+    "Concede",
+    "DeclareShortcut",
+    "RespondToShortcut",
+    "DeclineShortcut",
+    "PrecastCopyShortcut",
+    "EndContinuousEffect",
+    "BeginResolveAll",
+    "RespondResolveAllConsent",
+    "RevokeResolveAllConsent",
+];
+
+fn register_action_classes(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = m.py();
+    let globals = PyDict::new(py);
+    globals.set_item("_GameAction", py.get_type::<GameAction>())?;
+    py.run(
+        c_str!(
+            r#"
+class _ActionMeta(type):
+    def __call__(cls, *args, **data):
+        if args:
+            if len(args) != 1 or data or not isinstance(args[0], dict):
+                raise TypeError(f"{cls.__name__} accepts one dict or keyword payload fields")
+            data = args[0]
+        value = {"type": cls.__kind__}
+        if data:
+            value["data"] = data
+        return _GameAction.from_dict(value)
+
+    def __instancecheck__(cls, instance):
+        return isinstance(instance, _GameAction) and instance.kind == cls.__kind__
+
+def _make_action_class(name):
+    return _ActionMeta(
+        name,
+        (),
+        {
+            "__kind__": name,
+            "__module__": "phase",
+            "__doc__": f"Construct a {name} GameAction.",
+        },
+    )
+"#
+        ),
+        Some(&globals),
+        None,
+    )?;
+    let make_class = globals
+        .get_item("_make_action_class")?
+        .ok_or_else(|| py_err("failed to initialize action classes"))?;
+    for name in ACTION_KINDS {
+        m.add(*name, make_class.call1((*name,))?)?;
+    }
+    Ok(())
+}
+
 #[pymodule]
 fn phase(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Engine>()?;
     m.add_class::<Game>()?;
     m.add_class::<GameAction>()?;
-    m.add_function(pyo3::wrap_pyfunction!(build_oracle_face, m)?)?;
-    m.add_function(pyo3::wrap_pyfunction!(build_oracle_face_multi, m)?)?;
+    m.add_class::<ActionResult>()?;
+    register_action_classes(m)?;
+    m.add_function(wrap_pyfunction!(build_oracle_face, m)?)?;
+    m.add_function(wrap_pyfunction!(build_oracle_face_multi, m)?)?;
     Ok(())
 }
 

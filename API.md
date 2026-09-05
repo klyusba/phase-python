@@ -16,6 +16,9 @@ uv pip install maturin
 maturin develop
 ```
 
+- Download AtomicCards.json from MTGJSON
+- Place it at data/mtgjson/AtomicCards.json
+
 You need a `card-data.json` export from the phase repo (`./scripts/gen-card-data.sh`).
 Download from https://data.phase-rs.dev/card-data.json.
 
@@ -114,19 +117,25 @@ A live match. The engine `GameState` is held in Rust; only snapshots and prompts
 
 Legal actions for the player currently expected to act. Returns native `GameAction` objects (no JSON). Pass one to `apply`.
 
-### `Game.apply(actor: int, action) -> dict`
+### `Game.apply(actor: int, action, *, fast_forward=False) -> ActionResult`
 
 Apply `action` as seat `actor` (trusted seat index, `0` / `1` / …).
 
 `action` should be a `GameAction` from `actions()`. A tagged JSON dict (`{"type": "...", "data": ...}`) is still accepted.
 
-Returns an `ActionResult` dict:
+Returns a native, frozen `ActionResult`. Its `events`, `waiting_for`, and
+`log_entries` properties are converted to Python values on access. `to_dict()`
+returns the legacy dict shape.
 
 | Key | Meaning |
 | --- | --- |
 | `events` | list of `GameEvent` dicts |
 | `waiting_for` | current prompt after the action |
 | `log_entries` | omitted when empty |
+| `fast_forwarded` | number of automatic pass-priority actions |
+
+When `fast_forward=True`, the engine continues while `PassPriority` is the
+only legal action, stopping as soon as the player has a meaningful choice.
 
 Raises `ValueError` if the action is illegal for that actor.
 
@@ -141,6 +150,19 @@ Current `WaitingFor` prompt (tagged JSON).
 ### `Game.priority_player() -> int`
 
 Seat that currently holds priority.
+
+### State inspection
+
+- `game.turn` and `game.phase`
+- `game.player(seat)`
+- `game.battlefield()`
+- `game.hand(seat)`
+- `game.graveyard(seat)`
+- `game.exile()`
+- `game.stack()`
+- `game.object(object_id)`
+
+Zone methods return full serialized game objects rather than only object IDs.
 
 ## `GameAction`
 
@@ -160,6 +182,18 @@ game.apply(0, action)
 | `==` | Compares the underlying engine action |
 
 `repr` is `GameAction(<kind>)`.
+
+Every action variant is also exported as a Python factory class. Payload fields
+are passed as keywords (or as one dict), and `isinstance` recognizes matching
+actions:
+
+```python
+from phase import PassPriority, PlayLand
+
+passed = PassPriority()
+played = PlayLand(object_id=12, card_id=4)
+assert isinstance(passed, PassPriority)
+```
 
 ## Errors
 
