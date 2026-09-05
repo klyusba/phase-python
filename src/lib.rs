@@ -31,7 +31,7 @@ use engine::database::synthesis::{
 use engine::database::CardDatabase;
 use engine::game::{
     apply, load_and_hydrate_decks, rehydrate_game_from_card_db, resolve_deck_list, start_game,
-    start_game_with_starting_player, validate_name_deck_for_format_full, DeckList, PlayerDeckList,
+    start_game_with_starting_player, DeckList, PlayerDeckList,
 };
 use engine::types::actions::{GameAction as EngineAction, GameActionKind};
 use engine::types::format::{FormatConfig, GameFormat};
@@ -80,37 +80,6 @@ fn parse_player_deck(value: &Bound<'_, PyAny>) -> PyResult<PlayerDeckList> {
     from_py(value)
 }
 
-fn validate_seat(
-    db: &CardDatabase,
-    seat: &str,
-    deck: &PlayerDeckList,
-    format_config: &FormatConfig,
-    match_type: Option<engine::types::match_config::MatchType>,
-    player_count: usize,
-) -> Result<(), String> {
-    validate_name_deck_for_format_full(
-        db,
-        &deck.main_deck,
-        &deck.sideboard,
-        &deck.commander,
-        &deck.companion,
-        &deck.planar_deck,
-        &deck.scheme_deck,
-        &deck.signature_spell,
-        &[],
-        format_config,
-        match_type,
-        player_count,
-    )
-    .map_err(|reasons| {
-        reasons
-            .into_iter()
-            .map(|reason| format!("{seat} deck: {reason}"))
-            .collect::<Vec<_>>()
-            .join("; ")
-    })
-}
-
 #[allow(clippy::too_many_arguments)]
 fn start_match(
     db: &CardDatabase,
@@ -137,35 +106,6 @@ fn start_match(
         ai_difficulties: Vec::new(),
         draft_set_codes: Vec::new(),
     };
-
-    if !format_config.format.supplies_fixed_deck() {
-        validate_seat(
-            db,
-            "player",
-            &deck_list.player,
-            &format_config,
-            Some(match_config.match_type),
-            player_count,
-        )?;
-        validate_seat(
-            db,
-            "opponent",
-            &deck_list.opponent,
-            &format_config,
-            Some(match_config.match_type),
-            player_count,
-        )?;
-        for (index, deck) in deck_list.ai_decks.iter().enumerate() {
-            validate_seat(
-                db,
-                &format!("player {}", index + 2),
-                deck,
-                &format_config,
-                Some(match_config.match_type),
-                player_count,
-            )?;
-        }
-    }
 
     let mut state = GameState::new(format_config, player_count_u8, seed);
     state.set_match_config(match_config);
