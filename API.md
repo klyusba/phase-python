@@ -13,7 +13,7 @@ Requires Rust (the same nightly pin as phase: see `rust-toolchain.toml`) and Pyt
 ```bash
 uv venv && source .venv/bin/activate
 uv pip install maturin
-maturin develop
+maturin develop -F experimental-inspect --generate-stubs
 ```
 
 - Download AtomicCards.json from MTGJSON
@@ -183,17 +183,6 @@ game.apply(0, action)
 
 `repr` is `GameAction(<kind>)`.
 
-Every action variant is also exported as a Python factory class. Payload fields
-are passed as keywords (or as one dict), and `isinstance` recognizes matching
-actions:
-
-```python
-from phase import PassPriority, PlayLand
-
-passed = PassPriority()
-played = PlayLand(object_id=12, card_id=4)
-assert isinstance(passed, PassPriority)
-```
 
 ## Errors
 

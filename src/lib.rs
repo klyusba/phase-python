@@ -707,15 +707,15 @@ impl Game {
     }
 }
 
+/// Python bindings for the phase.rs Magic: The Gathering rules engine.
+// Declared as an inline module because introspection (and therefore stub
+// generation) does not cover function-style `#[pymodule]` declarations.
 #[pymodule]
-fn phase(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<Engine>()?;
-    m.add_class::<Game>()?;
-    m.add_class::<GameAction>()?;
-    m.add_class::<ActionResult>()?;
-    m.add_function(wrap_pyfunction!(build_oracle_face, m)?)?;
-    m.add_function(wrap_pyfunction!(build_oracle_face_multi, m)?)?;
-    Ok(())
+mod phase {
+    #[pymodule_export]
+    use super::{
+        build_oracle_face, build_oracle_face_multi, ActionResult, Engine, Game, GameAction,
+    };
 }
 
 #[cfg(test)]
