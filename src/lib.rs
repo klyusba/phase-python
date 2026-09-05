@@ -41,8 +41,7 @@ use engine::types::game_state::{
 use engine::types::identifiers::ObjectId;
 use engine::types::match_config::MatchConfig;
 use engine::types::player::PlayerId;
-use pyo3::exceptions::PyValueError;
-use pyo3::ffi::c_str;
+use pyo3::exceptions::{PyAttributeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict};
 use serde::de::DeserializeOwned;
@@ -241,6 +240,20 @@ fn action_kind(action: &EngineAction) -> String {
     format!("{:?}", GameActionKind::from(action))
 }
 
+fn action_json(action: &EngineAction) -> PyResult<serde_json::Value> {
+    serde_json::to_value(action).map_err(py_err)
+}
+
+/// Tagged-union payload (`data`), or `Null` for unit variants such as `PassPriority`.
+fn action_data_json(action: &EngineAction) -> PyResult<serde_json::Value> {
+    Ok(match action_json(action)? {
+        serde_json::Value::Object(mut map) => {
+            map.remove("data").unwrap_or(serde_json::Value::Null)
+        }
+        other => other,
+    })
+}
+
 /// Build a `CardFace` from MTGJSON atomic card data.
 ///
 /// `mtgjson` should be a dict matching the engine `AtomicCard` shape
@@ -391,13 +404,76 @@ impl GameAction {
         action_kind(&self.inner)
     }
 
+    /// Variant payload as a dict (or `None` for unit variants).
+    ///
+    /// Field names match the engine `GameAction` serde shape, so a `PlayLand`
+    /// action exposes `{"object_id": ..., "card_id": ...}`. The same keys are
+    /// also available as attributes (`action.object_id`) for debugger inspection.
+    #[getter]
+    fn data<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        to_py(py, &action_data_json(&self.inner)?)
+    }
+
+    /// Flattened view of `kind` plus payload fields. Debuggers that inspect
+    /// `__dict__` use this instead of the native `EngineAction` layout.
+    #[getter]
+    fn __dict__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        dict.set_item("kind", action_kind(&self.inner))?;
+        match action_data_json(&self.inner)? {
+            serde_json::Value::Object(map) => {
+                for (key, value) in map {
+                    dict.set_item(key, to_py(py, &value)?)?;
+                }
+            }
+            serde_json::Value::Null => {}
+            other => {
+                dict.set_item("data", to_py(py, &other)?)?;
+            }
+        }
+        Ok(dict)
+    }
+
     /// Tagged JSON dict. Prefer passing this object to [`Game::apply`] instead.
     fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         to_py(py, &self.inner)
     }
 
+    fn __getattr__<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
+        if !name.starts_with('_') {
+            if let serde_json::Value::Object(map) = action_data_json(&self.inner)? {
+                if let Some(value) = map.get(name) {
+                    return to_py(py, value);
+                }
+            }
+        }
+        Err(PyAttributeError::new_err(format!(
+            "'GameAction' object has no attribute '{name}'"
+        )))
+    }
+
+    fn __dir__(&self) -> PyResult<Vec<String>> {
+        let mut names = vec![
+            "kind".to_string(),
+            "data".to_string(),
+            "from_dict".to_string(),
+            "to_dict".to_string(),
+        ];
+        if let serde_json::Value::Object(map) = action_data_json(&self.inner)? {
+            names.extend(map.keys().cloned());
+        }
+        names.sort();
+        names.dedup();
+        Ok(names)
+    }
+
     fn __repr__(&self) -> String {
-        format!("GameAction({})", action_kind(&self.inner))
+        let kind = action_kind(&self.inner);
+        match action_data_json(&self.inner) {
+            Ok(serde_json::Value::Null) => format!("GameAction({kind})"),
+            Ok(data) => format!("GameAction({kind}, {data})"),
+            Err(_) => format!("GameAction({kind})"),
+        }
     }
 
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
@@ -568,6 +644,7 @@ impl Game {
 
     /// Objects in `seat`'s hand.
     fn hand<'py>(&self, py: Python<'py>, seat: u8) -> PyResult<Bound<'py, PyAny>> {
+        // TODO expose Card class and return list of Cards
         let player = self
             .state
             .players
@@ -630,196 +707,12 @@ impl Game {
     }
 }
 
-const ACTION_KINDS: &[&str] = &[
-    "PassPriority",
-    "ChooseMeldPair",
-    "ChooseEntryAttackTarget",
-    "PlayLand",
-    "CastSpell",
-    "Foretell",
-    "ActivateAbility",
-    "DeclareAttackers",
-    "DeclareBlockers",
-    "ChooseUntap",
-    "ChooseExert",
-    "ChooseEnlist",
-    "ChooseClashOpponent",
-    "ChooseZoneOpponentChooser",
-    "ChoosePileOpponent",
-    "ChooseAnnouncingOpponent",
-    "ChooseGiftRecipient",
-    "ChooseAssistPlayer",
-    "CommitAssistPayment",
-    "MulliganDecision",
-    "ReorderHand",
-    "TapLandForMana",
-    "ActivateManaSource",
-    "BackToManaPayment",
-    "UntapLandForMana",
-    "SpendPoolMana",
-    "UnspendPoolMana",
-    "SelectCards",
-    "ChooseRemoveCounterCostDistribution",
-    "SelectCoinFlips",
-    "ChooseOutsideGameCards",
-    "SelectTargets",
-    "ChooseTarget",
-    "ChooseReplacement",
-    "ChooseEntryController",
-    "OrderTriggers",
-    "CancelCast",
-    "Equip",
-    "CrewVehicle",
-    "ActivateStation",
-    "SaddleMount",
-    "Transform",
-    "PlayFaceDown",
-    "TurnFaceUp",
-    "SubmitSideboard",
-    "ChoosePlayDraw",
-    "ChooseOption",
-    "SubmitVoteCandidate",
-    "SubmitSpellbookDraft",
-    "SubmitPilePartition",
-    "ChoosePile",
-    "ChooseBranch",
-    "SubmitLifeRedistribution",
-    "ChooseDamageSource",
-    "SelectModes",
-    "DecideOptionalCost",
-    "ChooseAdventureFace",
-    "ChooseModalFace",
-    "ChooseAlternativeCast",
-    "ChooseCastingVariant",
-    "KeepAllCopyTargets",
-    "ChoosePermanentTypeSlot",
-    "ActivateNinjutsu",
-    "CastSpellAsSneak",
-    "CastSpellAsWebSlinging",
-    "CastSpellForFree",
-    "CastSpellAsMiracle",
-    "CastSpellAsMadness",
-    "DecideOptionalEffect",
-    "ChooseResolutionOptionalPaymentBranch",
-    "RespondToSpliceOffer",
-    "DecideOptionalEffectAndRemember",
-    "PayUnlessCost",
-    "ChooseUnlessCostBranch",
-    "ChooseActivationCostBranch",
-    "PayCombatTax",
-    "ChooseRingBearer",
-    "ChoosePair",
-    "ChooseDungeon",
-    "ChooseDungeonRoom",
-    "UnlockRoomDoor",
-    "RollPlanarDie",
-    "ChooseRoomDoor",
-    "TapForConvoke",
-    "HarmonizeTap",
-    "DeclareCompanion",
-    "CompanionToHand",
-    "DiscoverChoice",
-    "GraveyardPaidCastChoice",
-    "CascadeChoice",
-    "RippleChoice",
-    "FreeCastWindowChoice",
-    "ChooseTopOrBottom",
-    "ChooseMutateMergeSide",
-    "CipherEncode",
-    "ChooseLegend",
-    "ChooseBattleProtector",
-    "SetAutoPass",
-    "CancelAutoPass",
-    "SetPhaseStops",
-    "SetPriorityPassingMode",
-    "SetPriorityYield",
-    "SetMayTriggerAutoChoice",
-    "SetTriggerOrderTemplate",
-    "AssignCombatDamage",
-    "AssignBlockerDamage",
-    "DistributeAmong",
-    "ChooseCounterMoveDistribution",
-    "ChooseCountersToRemove",
-    "SubmitPayAmount",
-    "RetargetSpell",
-    "LearnDecision",
-    "SelectCategoryPermanents",
-    "ChooseKeptCreatures",
-    "ChooseKeptPermanents",
-    "ChooseX",
-    "SubmitPhyrexianChoices",
-    "ChooseManaColor",
-    "PayManaAbilityMana",
-    "CastPreparedCopy",
-    "ChooseSpecializeColor",
-    "CastParadigmCopy",
-    "PassParadigmOffer",
-    "Debug",
-    "GrantDebugPermission",
-    "RevokeDebugPermission",
-    "Concede",
-    "DeclareShortcut",
-    "RespondToShortcut",
-    "DeclineShortcut",
-    "PrecastCopyShortcut",
-    "EndContinuousEffect",
-    "BeginResolveAll",
-    "RespondResolveAllConsent",
-    "RevokeResolveAllConsent",
-];
-
-fn register_action_classes(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    let py = m.py();
-    let globals = PyDict::new(py);
-    globals.set_item("_GameAction", py.get_type::<GameAction>())?;
-    py.run(
-        c_str!(
-            r#"
-class _ActionMeta(type):
-    def __call__(cls, *args, **data):
-        if args:
-            if len(args) != 1 or data or not isinstance(args[0], dict):
-                raise TypeError(f"{cls.__name__} accepts one dict or keyword payload fields")
-            data = args[0]
-        value = {"type": cls.__kind__}
-        if data:
-            value["data"] = data
-        return _GameAction.from_dict(value)
-
-    def __instancecheck__(cls, instance):
-        return isinstance(instance, _GameAction) and instance.kind == cls.__kind__
-
-def _make_action_class(name):
-    return _ActionMeta(
-        name,
-        (),
-        {
-            "__kind__": name,
-            "__module__": "phase",
-            "__doc__": f"Construct a {name} GameAction.",
-        },
-    )
-"#
-        ),
-        Some(&globals),
-        None,
-    )?;
-    let make_class = globals
-        .get_item("_make_action_class")?
-        .ok_or_else(|| py_err("failed to initialize action classes"))?;
-    for name in ACTION_KINDS {
-        m.add(*name, make_class.call1((*name,))?)?;
-    }
-    Ok(())
-}
-
 #[pymodule]
 fn phase(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Engine>()?;
     m.add_class::<Game>()?;
     m.add_class::<GameAction>()?;
     m.add_class::<ActionResult>()?;
-    register_action_classes(m)?;
     m.add_function(wrap_pyfunction!(build_oracle_face, m)?)?;
     m.add_function(wrap_pyfunction!(build_oracle_face_multi, m)?)?;
     Ok(())
@@ -890,5 +783,21 @@ mod tests {
         assert_eq!(restored.priority_player, state.priority_player);
         assert_eq!(restored.waiting_for, state.waiting_for);
         assert_eq!(legal_actions(&restored), legal_actions(&state));
+    }
+
+    #[test]
+    fn action_data_json_exposes_variant_payload() {
+        assert_eq!(
+            action_data_json(&EngineAction::PassPriority).unwrap(),
+            serde_json::Value::Null
+        );
+
+        let play_land = EngineAction::PlayLand {
+            object_id: ObjectId(99),
+            card_id: engine::types::identifiers::CardId(42),
+        };
+        let data = action_data_json(&play_land).unwrap();
+        assert_eq!(data["object_id"], 99);
+        assert_eq!(data["card_id"], 42);
     }
 }
