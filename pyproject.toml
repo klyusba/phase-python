@@ -25,13 +25,12 @@ classifiers = [
     "Topic :: Games/Entertainment",
 ]
 authors = [
-    { name = "phase.rs contributors" },
+    { name = "Boris Klyus", email = "klyusba@gmail.com" },
 ]
 
 [project.urls]
-Homepage = "https://github.com/phase-rs/phase"
-Repository = "https://github.com/phase-rs/phase"
-Issues = "https://github.com/phase-rs/phase/issues"
+Homepage = "https://github.com/klyusba/phase-pyhton"
+Repository = "https://github.com/klyusba/phase-pyhton"
 
 [project.scripts]
 phase-gen = "phase.gen:main"

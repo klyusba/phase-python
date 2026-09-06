@@ -28,6 +28,12 @@ If `AtomicCards.json.gz` is missing, `phase-gen` downloads it from [MTGJSON](htt
 phase-gen -i AtomicCards.json.gz -o card-data.json
 ```
 
+You can generate a `card-data.json` for single set with
+
+```bash
+phase-gen -i HOB.json -o card-data.json
+```
+
 A hosted snapshot is available at https://data.phase-rs.dev/card-data.json.
 
 ## Quick start
