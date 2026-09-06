@@ -3,11 +3,49 @@ requires = ["maturin>=1.8,<2"]
 build-backend = "maturin"
 
 [project]
-name = "phase"
+name = "phase-rs"
 version = "0.1.0"
 description = "Python bindings for the phase.rs Magic: The Gathering rules engine"
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["mtg", "magic-the-gathering", "rules-engine"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+    "Topic :: Games/Entertainment",
+]
+authors = [
+    { name = "phase.rs contributors" },
+]
+
+[project.urls]
+Homepage = "https://github.com/phase-rs/phase"
+Repository = "https://github.com/phase-rs/phase"
+Issues = "https://github.com/phase-rs/phase/issues"
+
+[project.scripts]
+phase-gen = "phase.gen:main"
 
 [tool.maturin]
 features = ["extension-module"]
-module-name = "phase"
+module-name = "phase._phase"
+python-source = "python"
+include = [
+    { path = "rust-toolchain.toml", format = "sdist" },
+    { path = ".cargo/config.toml", format = "sdist" },
+    { path = "LICENSE", format = "sdist" },
+]
+
+[tool.maturin.generate-ci.github]
+trusted-publishing = true
+publishing-environment = "pypi"

@@ -1,4 +1,5 @@
 # simplified version of crates/engine/src/bin/oracle_gen.rs
+import argparse
 import gzip
 import json
 import os
@@ -20,6 +21,7 @@ MULTI_LAYOUTS = {
     "prepare",
     "aftermath",
 }
+
 
 def legality_score(card: dict) -> int:
     return sum(1 for status in (card.get("legalities") or {}).values() if status.lower() == "legal")
@@ -129,5 +131,26 @@ def process_cards(gz_file_path: str, output_path: str) -> None:
     print(f"Wrote {len(result)} faces to {output_path}")
 
 
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        prog="phase-gen",
+        description="Generate card-data.json from MTGJSON AtomicCards.",
+    )
+    parser.add_argument(
+        "-i",
+        "--input",
+        default=INPUT_PATH,
+        help="Path to AtomicCards.json.gz (downloaded from MTGJSON if missing)",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        default=OUTPUT_PATH,
+        help="Path to write card-data.json",
+    )
+    args = parser.parse_args(argv)
+    process_cards(args.input, args.output)
+
+
 if __name__ == "__main__":
-    process_cards(INPUT_PATH, OUTPUT_PATH)
+    main()

@@ -651,7 +651,7 @@ impl Game {
 // Declared as an inline module because introspection (and therefore stub
 // generation) does not cover function-style `#[pymodule]` declarations.
 #[pymodule]
-mod phase {
+mod _phase {
     #[pymodule_export]
     use super::{
         build_oracle_face, build_oracle_face_multi, ActionResult, Engine, Game, GameAction,

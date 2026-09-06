@@ -8,7 +8,14 @@ from phase import Engine, Game, GameAction
 
 ## Install
 
-Requires Rust (the same nightly pin as phase: see `rust-toolchain.toml`) and Python 3.10+.
+From PyPI (the distribution name is `phase-rs`; the import remains `phase`):
+
+```bash
+pip install phase-rs
+phase-gen -o card-data.json
+```
+
+From a source checkout, requires Rust (the same nightly pin as phase: see `rust-toolchain.toml`) and Python 3.10+.
 
 ```bash
 uv venv && source .venv/bin/activate
@@ -16,11 +23,7 @@ uv pip install maturin
 maturin develop -F experimental-inspect --generate-stubs
 ```
 
-- Download AtomicCards.json from MTGJSON
-- Place it at data/mtgjson/AtomicCards.json
-
-You need a `card-data.json` export from the phase repo (`./scripts/gen-card-data.sh`).
-Download from https://data.phase-rs.dev/card-data.json.
+`phase-gen` writes `card-data.json` from [MTGJSON AtomicCards](https://mtgjson.com). If the gzip dump is missing, it is downloaded automatically. A hosted snapshot is also available at https://data.phase-rs.dev/card-data.json.
 
 ## Quick start
 
