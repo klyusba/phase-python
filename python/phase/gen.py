@@ -4,12 +4,14 @@ import gzip
 import json
 import os
 import urllib.request
+from collections import defaultdict
 
 from phase import build_oracle_face, build_oracle_face_multi
 
 INPUT_PATH = "AtomicCards.json.gz"
 OUTPUT_PATH = "card-data.json"
 SOURCE_URL = "https://mtgjson.com/api/v5/AtomicCards.json.gz"
+SET_SOURCE_URL = "https://mtgjson.com/api/v5/{set_name}.json.gz"
 
 MULTI_LAYOUTS = {
     "split",
@@ -50,13 +52,45 @@ def oracle_id(card: dict) -> str | None:
     return (card.get("identifiers") or {}).get("scryfallOracleId")
 
 
-def load_atomic_groups(gz_file_path: str):
-    with gzip.open(gz_file_path, "r") as f:
-        root = json.load(f)
+def load_json(path: str):
+    if path.endswith(".gz"):
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            return json.load(f)
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def dedupe_set_faces(cards: list) -> list:
+    unique = []
+    seen = set()
+    for card in cards:
+        key = (card.get("faceName") or card.get("name"), card.get("side"), oracle_id(card))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(card)
+    unique.sort(key=lambda c: c.get("side") or "a")
+    return unique
+
+
+def groups_from_set_cards(cards: list):
+    by_name = defaultdict(list)
+    for card in cards:
+        if isinstance(card, dict) and card.get("name"):
+            by_name[card["name"]].append(card)
+    for name, group in by_name.items():
+        yield name, dedupe_set_faces(group)
+
+
+def load_card_groups(file_path: str):
+    root = load_json(file_path)
     data = root.get("data", {})
-    for name, cards in data.items():
-        if isinstance(cards, list):
-            yield name, cards
+    if "cards" in data:
+        yield from groups_from_set_cards(data["cards"])
+    else:
+        for name, cards in data.items():
+            if isinstance(cards, list):
+                yield name, cards
 
 
 def process_group(cards: list, result: dict) -> None:
@@ -100,26 +134,31 @@ def process_group(cards: list, result: dict) -> None:
         insert_face(result, face["name"].lower(), make_entry(face))
 
 
-def ensure_atomic_cards(gz_file_path: str) -> None:
-    if os.path.exists(gz_file_path):
+def resolve_set_input(set_name: str) -> str:
+    for candidate in (f"{set_name}.json.gz", f"{set_name}.json"):
+        if os.path.exists(candidate):
+            return candidate
+    return f"{set_name}.json.gz"
+
+
+def ensure_source(file_path: str, source_url: str) -> None:
+    if os.path.exists(file_path):
         return
-    print(f"Downloading {SOURCE_URL} -> {gz_file_path}")
-    tmp_path = gz_file_path + ".tmp"
+    print(f"Downloading {source_url} -> {file_path}")
+    tmp_path = file_path + ".tmp"
     try:
-        urllib.request.urlretrieve(SOURCE_URL, tmp_path)
-        os.replace(tmp_path, gz_file_path)
+        urllib.request.urlretrieve(source_url, tmp_path)
+        os.replace(tmp_path, file_path)
     except Exception:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
         raise
 
 
-def process_cards(gz_file_path: str, output_path: str) -> None:
-    ensure_atomic_cards(gz_file_path)
-
-    print(f"Processing cards from: {gz_file_path}")
+def process_cards(file_path: str, output_path: str) -> None:
+    print(f"Processing cards from: {file_path}")
     result = {}
-    for name, cards in load_atomic_groups(gz_file_path):
+    for name, cards in load_card_groups(file_path):
         try:
             process_group(cards, result)
         except Exception as exc:
@@ -134,13 +173,13 @@ def process_cards(gz_file_path: str, output_path: str) -> None:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="phase-gen",
-        description="Generate card-data.json from MTGJSON AtomicCards.",
+        description="Generate card-data.json from MTGJSON AtomicCards or a single set.",
     )
     parser.add_argument(
         "-i",
         "--input",
-        default=INPUT_PATH,
-        help="Path to AtomicCards.json.gz (downloaded from MTGJSON if missing)",
+        default=None,
+        help="Path to AtomicCards.json.gz or a set JSON (downloaded from MTGJSON if missing)",
     )
     parser.add_argument(
         "-o",
@@ -148,8 +187,23 @@ def main(argv: list[str] | None = None) -> None:
         default=OUTPUT_PATH,
         help="Path to write card-data.json",
     )
+    parser.add_argument(
+        "--set",
+        dest="set_name",
+        help="MTGJSON set code (e.g. HOB). Downloads https://mtgjson.com/api/v5/{SET}.json.gz "
+        "and reads cards from data.cards",
+    )
     args = parser.parse_args(argv)
-    process_cards(args.input, args.output)
+    if args.set_name:
+        set_name = args.set_name.upper()
+        source_url = SET_SOURCE_URL.format(set_name=set_name)
+        input_path = args.input if args.input is not None else resolve_set_input(set_name)
+    else:
+        source_url = SOURCE_URL
+        input_path = args.input if args.input is not None else INPUT_PATH
+
+    ensure_source(input_path, source_url)
+    process_cards(input_path, args.output)
 
 
 if __name__ == "__main__":
