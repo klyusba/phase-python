@@ -1,0 +1,96 @@
+name: Bump engine
+
+on:
+  schedule:
+    - cron: "0 */10 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: bump-engine
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Resolve latest phase-rs engine tag
+        id: engine
+        run: |
+          set -euo pipefail
+          latest="$(git ls-remote --tags --refs https://github.com/phase-rs/phase.git \
+            | awk '/refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ { print $1, substr($2, 11) }' \
+            | sort -V -k2 \
+            | tail -n1)"
+          if [ -z "$latest" ]; then
+            echo "No vMAJOR.MINOR.PATCH tags found on phase-rs/phase" >&2
+            exit 1
+          fi
+          sha="${latest%% *}"
+          tag="${latest##* }"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Latest engine tag: $tag ($sha)"
+
+      - name: Check whether Cargo.lock is already on that commit
+        id: need_bump
+        run: |
+          set -euo pipefail
+          current="$(python3 - <<'PY'
+          import pathlib, re
+          text = pathlib.Path("Cargo.lock").read_text()
+          match = re.search(
+              r'name = "phase-engine"\nversion = "[^"]+"\nsource = "git\+https://github\.com/phase-rs/phase#([0-9a-f]+)"',
+              text,
+          )
+          print(match.group(1) if match else "")
+          PY
+          )"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          if [ "$current" = "${{ steps.engine.outputs.sha }}" ]; then
+            echo "Cargo.lock already pins ${{ steps.engine.outputs.tag }}"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Bumping $current -> ${{ steps.engine.outputs.sha }}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: dtolnay/rust-toolchain@master
+        if: steps.need_bump.outputs.changed == 'true'
+
+      - name: Update phase-engine
+        if: steps.need_bump.outputs.changed == 'true'
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: cargo update -p phase-engine --precise "${{ steps.engine.outputs.sha }}"
+
+      - name: Commit and push
+        id: push
+        if: steps.need_bump.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          if git diff --quiet Cargo.lock; then
+            echo "cargo update did not change Cargo.lock"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock
+          git commit -m "Bump phase-engine to ${{ steps.engine.outputs.tag }}"
+          git push origin HEAD:${{ github.event.repository.default_branch }}
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger CI
+        if: steps.push.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/dispatches" \
+            -f event_type=engine-bumped

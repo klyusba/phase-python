@@ -14,6 +14,8 @@ on:
       - '*'
   pull_request:
   workflow_dispatch:
+  repository_dispatch:
+    types: [engine-bumped]
 
 permissions:
   contents: read

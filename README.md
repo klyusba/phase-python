@@ -1,6 +1,6 @@
 # phase-rs
 
-Python bindings for the [phase.rs](https://github.com/phase-rs/phase) Magic: The Gathering rules engine.
+Unofficial Python bindings for the [phase.rs](https://github.com/phase-rs/phase) Magic: The Gathering rules engine.
 
 ```python
 from phase import Engine, Game, GameAction

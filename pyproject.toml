@@ -29,8 +29,8 @@ authors = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/klyusba/phase-pyhton"
-Repository = "https://github.com/klyusba/phase-pyhton"
+Homepage = "https://github.com/klyusba/phase-python"
+Repository = "https://github.com/klyusba/phase-python"
 
 [project.scripts]
 phase-gen = "phase.gen:main"
