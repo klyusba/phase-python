@@ -1,11 +1,14 @@
 # simplified version of crates/engine/src/bin/oracle_gen.rs
-# expects data from https://mtgjson.com/api/v5/AtomicCards.json.gz
 import gzip
 import json
 import os
+import urllib.request
 
 from phase import build_oracle_face, build_oracle_face_multi
 
+INPUT_PATH = "AtomicCards.json.gz"
+OUTPUT_PATH = "card-data.json"
+SOURCE_URL = "https://mtgjson.com/api/v5/AtomicCards.json.gz"
 
 MULTI_LAYOUTS = {
     "split",
@@ -18,70 +21,16 @@ MULTI_LAYOUTS = {
     "aftermath",
 }
 
-FORMAT_KEYS = {
-    "standard",
-    "commander",
-    "modern",
-    "premodern",
-    "pioneer",
-    "legacy",
-    "vintage",
-    "pauper",
-    "historic",
-    "brawl",
-    "standardbrawl",
-    "timeless",
-    "paupercommander",
-    "duel",
-    "oathbreaker",
-}
-
-STATUS_EXPORT = {
-    "legal": "legal",
-    "notlegal": "not_legal",
-    "banned": "banned",
-    "restricted": "restricted",
-}
-
-
-def alnum_lower(value: str) -> str:
-    return "".join(c.lower() for c in value if c.isalnum())
-
-
-def export_legalities(legalities: dict | None) -> dict:
-    result = {}
-    if not legalities:
-        return result
-    for key, value in legalities.items():
-        fmt = alnum_lower(key)
-        if fmt not in FORMAT_KEYS:
-            continue
-        status = STATUS_EXPORT.get(alnum_lower(str(value)))
-        if status:
-            result[fmt] = status
-    return result
-
-
 def legality_score(card: dict) -> int:
     return sum(1 for status in (card.get("legalities") or {}).values() if status.lower() == "legal")
 
 
-def make_entry(face: dict, source: dict, layout=None, face_index=None, rulings=None) -> dict:
+def make_entry(face: dict, layout=None, face_index=None) -> dict:
     entry = dict(face)
-    entry["legalities"] = export_legalities(source.get("legalities"))
     if layout:
         entry["layout"] = layout
     if face_index is not None:
         entry["face_index"] = face_index
-    printings = source.get("printings") or []
-    if printings:
-        entry["printings"] = printings
-    if rulings:
-        entry["rulings"] = [
-            {"date": r["date"], "text": r["text"]}
-            for r in rulings
-            if isinstance(r, dict) and "date" in r and "text" in r
-        ]
     return entry
 
 
@@ -116,7 +65,7 @@ def process_group(cards: list, result: dict) -> None:
     if len(faces) == 1:
         source = faces[0]
         face = build_oracle_face(source, oracle_id(source))
-        insert_face(result, face["name"].lower(), make_entry(face, source, rulings=source.get("rulings")))
+        insert_face(result, face["name"].lower(), make_entry(face))
         return
 
     if len(faces) == 2 and faces[1]['subtypes'] == ['Omen']:
@@ -136,10 +85,8 @@ def process_group(cards: list, result: dict) -> None:
                 face["name"].lower(),
                 make_entry(
                     face,
-                    faces[0],
                     layout=layout_str,
                     face_index=idx,
-                    rulings=faces[0].get("rulings") if idx == 0 else None,
                 ),
             )
         return
@@ -148,13 +95,25 @@ def process_group(cards: list, result: dict) -> None:
         # name collisions
         source = max(faces, key=legality_score)
         face = build_oracle_face(source, oracle_id(source))
-        insert_face(result, face["name"].lower(), make_entry(face, source, rulings=source.get("rulings")))
+        insert_face(result, face["name"].lower(), make_entry(face))
+
+
+def ensure_atomic_cards(gz_file_path: str) -> None:
+    if os.path.exists(gz_file_path):
+        return
+    print(f"Downloading {SOURCE_URL} -> {gz_file_path}")
+    tmp_path = gz_file_path + ".tmp"
+    try:
+        urllib.request.urlretrieve(SOURCE_URL, tmp_path)
+        os.replace(tmp_path, gz_file_path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
 
 
 def process_cards(gz_file_path: str, output_path: str) -> None:
-    if not os.path.exists(gz_file_path):
-        print(f"File not found: {gz_file_path}")
-        return
+    ensure_atomic_cards(gz_file_path)
 
     print(f"Processing cards from: {gz_file_path}")
     result = {}
@@ -171,8 +130,4 @@ def process_cards(gz_file_path: str, output_path: str) -> None:
 
 
 if __name__ == "__main__":
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
-    gz_file = os.path.join(project_root, "AtomicCards.json.gz")
-    out_file = os.path.join(project_root, "card-data.json")
-    process_cards(gz_file, out_file)
+    process_cards(INPUT_PATH, OUTPUT_PATH)
