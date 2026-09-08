@@ -4,10 +4,10 @@ build-backend = "maturin"
 
 [project]
 name = "phase-python"
-version = "0.1.0"
+version = "0.77.0"
 description = "Python bindings for the phase.rs Magic: The Gathering rules engine"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 keywords = ["mtg", "magic-the-gathering", "rules-engine"]
 classifiers = [
@@ -16,7 +16,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",

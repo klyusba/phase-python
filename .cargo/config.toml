@@ -1,3 +1,7 @@
 [env]
 # GameState is large; the engine's native tests use a 16 MiB stack.
 RUST_MIN_STACK = "16777216"
+# Without this, pyo3's build script finds /usr/bin/python3 (3.9), which is older
+# than the abi3-py311 floor. maturin sets PYO3_PYTHON itself, and cargo does not
+# overwrite already-set vars, so this only applies to bare cargo invocations.
+PYO3_PYTHON = { value = ".venv/bin/python", relative = true }
