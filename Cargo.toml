@@ -20,3 +20,11 @@ serde_json = "1"
 extension-module = ["pyo3/extension-module"]
 # Embeds introspection data in the cdylib so `maturin generate-stubs` can emit `phase.pyi`.
 experimental-inspect = ["pyo3/experimental-inspect"]
+
+[profile.release]
+# Automatically strip symbols from the binary.
+strip = true
+# Enable link-time optimization so the linker can remove unused code.
+lto = true
+# Use a single codegen unit so the optimizer can see all code at once.
+codegen-units = 1

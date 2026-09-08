@@ -224,8 +224,8 @@ dependencies = [
 
 [[package]]
 name = "phase-engine"
-version = "0.75.0"
-source = "git+https://github.com/phase-rs/phase#941f75a7b348c2522ecff4698c000e4505b0ca97"
+version = "0.77.0"
+source = "git+https://github.com/phase-rs/phase#95dd4b3e1a6c66dafa4130f9d1e222649d959f4c"
 dependencies = [
  "im",
  "indexmap",
@@ -235,6 +235,7 @@ dependencies = [
  "rand_chacha",
  "rustc-hash",
  "serde",
+ "serde_ignored",
  "serde_json",
  "sha2",
  "smallvec",
@@ -426,6 +427,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.4",
+]
+
+[[package]]
+name = "serde_ignored"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "115dffd5f3853e06e746965a20dcbae6ee747ae30b543d91b0e089668bb07798"
+dependencies = [
+ "serde",
+ "serde_core",
 ]
 
 [[package]]

@@ -38,7 +38,8 @@ def make_entry(face: dict, layout=None, face_index=None) -> dict:
     return entry
 
 
-def insert_face(result: dict, key: str, entry: dict) -> None:
+def insert_face(result: dict, entry: dict) -> None:
+    key = entry['name'].lower()
     existing = result.get(key)
     if existing is None:
         result[key] = entry
@@ -101,7 +102,7 @@ def process_group(cards: list, result: dict) -> None:
     if len(faces) == 1:
         source = faces[0]
         face = build_oracle_face(source, oracle_id(source))
-        insert_face(result, face["name"].lower(), make_entry(face))
+        insert_face(result, face)
         return
 
     if len(faces) == 2 and faces[1]['subtypes'] == ['Omen']:
@@ -118,7 +119,6 @@ def process_group(cards: list, result: dict) -> None:
         for idx, face in enumerate([face_a, face_b]):
             insert_face(
                 result,
-                face["name"].lower(),
                 make_entry(
                     face,
                     layout=layout_str,
@@ -131,7 +131,7 @@ def process_group(cards: list, result: dict) -> None:
         # name collisions
         source = max(faces, key=legality_score)
         face = build_oracle_face(source, oracle_id(source))
-        insert_face(result, face["name"].lower(), make_entry(face))
+        insert_face(result, face)
 
 
 def resolve_set_input(set_name: str) -> str:

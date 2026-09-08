@@ -9,7 +9,7 @@ from phase import Engine, Game, GameAction
 Install from PyPI (prebuilt wheels; no Rust toolchain required):
 
 ```bash
-pip install phase-rs
+pip install phase-python
 ```
 
 The import name is `phase`. The distribution is `phase-rs` because `phase` is already taken on PyPI.
@@ -20,6 +20,11 @@ The engine needs a `card-data.json` oracle export. After installing the package,
 
 ```bash
 phase-gen -o card-data.json
+```
+
+Or generate `card-data.json` for one set only:
+```bash
+phase-gen --set SET -o card-data.json
 ```
 
 If `AtomicCards.json.gz` is missing, `phase-gen` downloads it from [MTGJSON](https://mtgjson.com). You can also pass an existing dump:
@@ -62,7 +67,7 @@ Requires Rust (see `rust-toolchain.toml`) and Python 3.10+.
 ```bash
 uv venv && source .venv/bin/activate
 uv pip install maturin
-maturin develop -F experimental-inspect --generate-stubs
+maturin develop --generate-stubs
 ```
 
 ## License
