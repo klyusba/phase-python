@@ -39,7 +39,6 @@ phase-gen = "phase.gen:main"
 features = ["extension-module", "experimental-inspect"]
 module-name = "phase._phase"
 python-source = "python"
-profile = "release"
 include = [
     { path = "rust-toolchain.toml", format = "sdist" },
     { path = ".cargo/config.toml", format = "sdist" },

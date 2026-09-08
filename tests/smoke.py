@@ -13,3 +13,4 @@ result = game.apply(0, actions[0])
 
 saved = game.state()
 resumed = engine.load_game(saved)
+actions = resumed.actions()
