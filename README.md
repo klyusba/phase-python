@@ -12,7 +12,7 @@ Install from PyPI (prebuilt wheels; no Rust toolchain required):
 pip install phase-python
 ```
 
-The import name is `phase`. The distribution is `phase-rs` because `phase` is already taken on PyPI.
+The import name is `phase`. The distribution is `phase-python` because `phase` is already taken on PyPI.
 
 ## Card data
 
