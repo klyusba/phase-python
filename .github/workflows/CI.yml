@@ -20,6 +20,12 @@ on:
 permissions:
   contents: read
 
+env:
+  # The engine crate is memory-hungry to compile; unrestricted parallelism OOMs
+  # the runners. Host builds pick this up directly, the containerized Linux
+  # builds get it forwarded via `docker-options`.
+  CARGO_BUILD_JOBS: "1"
+
 jobs:
   linux:
     runs-on: ${{ matrix.platform.runner }}
@@ -50,6 +56,7 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: auto
+          docker-options: -e CARGO_BUILD_JOBS
       - name: Upload wheels
         uses: actions/upload-artifact@v6
         with:
@@ -81,6 +88,7 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: musllinux_1_2
+          docker-options: -e CARGO_BUILD_JOBS
       - name: Upload wheels
         uses: actions/upload-artifact@v6
         with:

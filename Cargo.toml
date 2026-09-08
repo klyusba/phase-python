@@ -24,11 +24,10 @@ experimental-inspect = ["pyo3/experimental-inspect"]
 [profile.release]
 # Automatically strip symbols from the binary.
 strip = true
+debug = false
 
 [profile.slim]
 inherits = "release"
-# Automatically strip symbols from the binary.
-strip = true
 # Enable link-time optimization so the linker can remove unused code.
 lto = true
 # Use a single codegen unit so the optimizer can see all code at once.
