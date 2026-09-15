@@ -106,11 +106,14 @@ if [[ "${PUBLISH}" -eq 1 && -z "$(pypi_token)" ]]; then
 fi
 
 if [[ "${BUILD}" -eq 1 ]]; then
+  echo "==> clearing ${DIST}"
+  rm -rf "${DIST}"
+  mkdir -p "${DIST}"
+
   if [[ "${SKIP_MACOS}" -eq 0 ]]; then
     require_cmd rustup
     echo "==> macOS wheel (aarch64-apple-darwin) on host"
     rustup target add aarch64-apple-darwin
-    mkdir -p "${DIST}"
     (
       cd "${ROOT}"
       host_maturin build --release --target aarch64-apple-darwin --out dist ${INTERPRETERS}
@@ -123,7 +126,6 @@ if [[ "${BUILD}" -eq 1 ]]; then
       echo "docker is not running" >&2
       exit 1
     fi
-    mkdir -p "${DIST}"
     linux_wheel linux/arm64
     linux_wheel linux/amd64
   fi
