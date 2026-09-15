@@ -98,6 +98,29 @@ class Game:
         """
         Objects currently on the battlefield.
         """
+    def choose_action(self, /, actor: int, *, difficulty: str = "Medium") -> GameAction | None:
+        """
+        Choose an action for `actor` using the phase-ai search / heuristics.
+        
+        `difficulty` is an engine label (`"VeryEasy"`, `"Easy"`, `"Medium"`,
+        `"Hard"`, `"VeryHard"`, `"CEDH"`).
+        """
+    def choose_attackers(self, /, actor: int) -> list[int]:
+        """
+        Choose attackers for `actor` (object IDs).
+        """
+    def choose_blockers(self, /, actor: int) -> list[tuple[int, int]]:
+        """
+        Choose blocker assignments for `actor`.
+        
+        Attackers are taken from the current combat state (creatures attacking
+        this seat or a planeswalker/battle they control). Returns
+        `(blocker_id, attacker_id)` pairs.
+        """
+    def evaluate_state(self, /, seat: int) -> float:
+        """
+        Heuristic board evaluation from `seat`'s perspective (higher is better).
+        """
     def exile(self, /) -> Any:
         """
         Objects in exile.

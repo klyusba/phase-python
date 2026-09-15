@@ -14,3 +14,8 @@ result = game.apply(0, actions[0])
 saved = game.state()
 resumed = engine.load_game(saved)
 actions = resumed.actions()
+
+score = game.evaluate_state(0)
+choice = game.choose_action(0, difficulty="Easy", seed=42)
+attackers = game.choose_attackers(0)
+blockers = game.choose_blockers(0)

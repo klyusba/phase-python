@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "phase-python"
-version = "0.77.0"
+version = "0.83.0"
 description = "Python bindings for the phase.rs Magic: The Gathering rules engine"
 readme = "README.md"
 requires-python = ">=3.11"

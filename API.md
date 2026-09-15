@@ -142,6 +142,26 @@ only legal action, stopping as soon as the player has a meaningful choice.
 
 Raises `ValueError` if the action is illegal for that actor.
 
+### `Game.choose_action(actor: int, *, difficulty="Medium", seed=None) -> GameAction | None`
+
+Pick an action for seat `actor` via [phase-ai](https://github.com/phase-rs/phase) (`choose_action`). Does not apply it; pass the result to `apply`.
+
+`difficulty` is one of `VeryEasy`, `Easy`, `Medium`, `Hard`, `VeryHard`, `CEDH`. Search uses the Native platform preset scaled for the current player count. `seed` is used only for this choice (default: the game's `rng_seed`); the live game RNG is not advanced.
+
+Returns `None` when the AI has no legal action.
+
+### `Game.choose_attackers(actor: int) -> list[int]`
+
+Attacker object IDs chosen by phase-ai combat heuristics.
+
+### `Game.choose_blockers(actor: int) -> list[tuple[int, int]]`
+
+Block assignments as `(blocker_id, attacker_id)` pairs. Attackers come from the current combat state (those attacking this seat or a planeswalker/battle they control). Empty when combat has not been declared.
+
+### `Game.evaluate_state(seat: int) -> float`
+
+Heuristic evaluation from `seat`'s perspective (higher is better). Uses learned phase-ai weights for the current turn (early T1–3, mid T4–7, late T8+).
+
 ### `Game.state() -> dict`
 
 Full persistence snapshot (same serde shape as the WASM export, including RNG high-water). Pass to `Engine.load_game`. This clones and serializes the whole `GameState`; it is the expensive path.

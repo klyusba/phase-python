@@ -41,9 +41,17 @@ use engine::types::game_state::{
 use engine::types::identifiers::ObjectId;
 use engine::types::match_config::MatchConfig;
 use engine::types::player::PlayerId;
+use phase_ai::config::ACCEPTED_DIFFICULTY_LABELS;
+use phase_ai::{
+    choose_action as ai_choose_action, choose_attackers as ai_choose_attackers,
+    choose_blockers as ai_choose_blockers, create_config_for_players,
+    evaluate_state as ai_evaluate_state, AiDifficulty, EvalWeightSet, Platform,
+};
 use pyo3::exceptions::{PyAttributeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict};
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -68,6 +76,42 @@ fn from_py<T: DeserializeOwned>(value: &Bound<'_, PyAny>) -> PyResult<T> {
 fn parse_format(name: &str) -> PyResult<GameFormat> {
     serde_json::from_value(serde_json::Value::String(name.to_string()))
         .map_err(|_| py_err(format!("unknown format {name:?}")))
+}
+
+fn parse_difficulty(name: &str) -> PyResult<AiDifficulty> {
+    let label = name.trim();
+    if ACCEPTED_DIFFICULTY_LABELS
+        .iter()
+        .any(|accepted| accepted.eq_ignore_ascii_case(label))
+    {
+        Ok(AiDifficulty::from_label(label))
+    } else {
+        Err(py_err(format!("unknown difficulty {name:?}")))
+    }
+}
+
+fn player_or_err(state: &GameState, seat: u8) -> PyResult<()> {
+    if (seat as usize) < state.players.len() {
+        Ok(())
+    } else {
+        Err(py_err(format!("unknown player seat {seat}")))
+    }
+}
+
+/// Attackers currently attacking `player` (or a planeswalker/battle they control).
+fn attackers_against(state: &GameState, player: PlayerId) -> Vec<ObjectId> {
+    state
+        .combat
+        .as_ref()
+        .map(|combat| {
+            combat
+                .attackers
+                .iter()
+                .filter(|attacker| attacker.defending_player == player)
+                .map(|attacker| attacker.object_id)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn parse_player_deck(value: &Bound<'_, PyAny>) -> PyResult<PlayerDeckList> {
@@ -103,8 +147,7 @@ fn start_match(
         player,
         opponent,
         ai_decks: extra_players,
-        ai_difficulties: Vec::new(),
-        draft_set_codes: Vec::new(),
+        ..DeckList::default()
     };
 
     let mut state = GameState::new(format_config, player_count_u8, seed);
@@ -187,9 +230,7 @@ fn action_json(action: &EngineAction) -> PyResult<serde_json::Value> {
 /// Tagged-union payload (`data`), or `Null` for unit variants such as `PassPriority`.
 fn action_data_json(action: &EngineAction) -> PyResult<serde_json::Value> {
     Ok(match action_json(action)? {
-        serde_json::Value::Object(mut map) => {
-            map.remove("data").unwrap_or(serde_json::Value::Null)
-        }
+        serde_json::Value::Object(mut map) => map.remove("data").unwrap_or(serde_json::Value::Null),
         other => other,
     })
 }
@@ -532,6 +573,60 @@ impl Game {
         })
     }
 
+    /// Choose an action for `actor` using the phase-ai search / heuristics.
+    ///
+    /// `difficulty` is an engine label (`"VeryEasy"`, `"Easy"`, `"Medium"`,
+    /// `"Hard"`, `"VeryHard"`, `"CEDH"`).
+    #[pyo3(signature = (actor, *, difficulty = "Medium"))]
+    fn choose_action(
+        &self,
+        py: Python<'_>,
+        actor: u8,
+        difficulty: &str
+    ) -> PyResult<Option<GameAction>> {
+        player_or_err(&self.state, actor)?;
+        let difficulty = parse_difficulty(difficulty)?;
+        let config =
+            create_config_for_players(difficulty, Platform::Native, self.state.players.len() as u8);
+        let action = py.detach(|| {
+            let mut rng = StdRng::seed_from_u64(self.state.rng_seed);
+            ai_choose_action(&self.state, PlayerId(actor), &config, &mut rng)
+        });
+        Ok(action.map(|inner| GameAction { inner }))
+    }
+
+    /// Choose attackers for `actor` (object IDs).
+    fn choose_attackers(&self, actor: u8) -> PyResult<Vec<u64>> {
+        player_or_err(&self.state, actor)?;
+        Ok(ai_choose_attackers(&self.state, PlayerId(actor))
+            .into_iter()
+            .map(|id| id.0)
+            .collect())
+    }
+
+    /// Choose blocker assignments for `actor`.
+    ///
+    /// Attackers are taken from the current combat state (creatures attacking
+    /// this seat or a planeswalker/battle they control). Returns
+    /// `(blocker_id, attacker_id)` pairs.
+    fn choose_blockers(&self, actor: u8) -> PyResult<Vec<(u64, u64)>> {
+        player_or_err(&self.state, actor)?;
+        let player = PlayerId(actor);
+        let attacker_ids = attackers_against(&self.state, player);
+        Ok(ai_choose_blockers(&self.state, player, &attacker_ids)
+            .into_iter()
+            .map(|(blocker, attacker)| (blocker.0, attacker.0))
+            .collect())
+    }
+
+    /// Heuristic board evaluation from `seat`'s perspective (higher is better).
+    fn evaluate_state(&self, seat: u8) -> PyResult<f64> {
+        player_or_err(&self.state, seat)?;
+        let weight_set = EvalWeightSet::learned();
+        let weights = weight_set.for_turn(self.state.turn_number);
+        Ok(ai_evaluate_state(&self.state, PlayerId(seat), weights))
+    }
+
     /// Full persisted `GameState` as a Python dict (same serde shape as WASM export).
     ///
     /// Pass the result to [`Engine::load_game`] to resume from this snapshot.
@@ -739,5 +834,39 @@ mod tests {
         let data = action_data_json(&play_land).unwrap();
         assert_eq!(data["object_id"], 99);
         assert_eq!(data["card_id"], 42);
+    }
+
+    #[test]
+    fn ai_helpers_run_on_started_game() {
+        let db = forest_db();
+        let state = start_match(
+            &db,
+            sixty_forests(),
+            sixty_forests(),
+            Vec::new(),
+            1,
+            FormatConfig::standard(),
+            MatchConfig::default(),
+            Some(0),
+        )
+        .expect("forest game starts");
+
+        let config = create_config_for_players(AiDifficulty::Easy, Platform::Native, 2);
+        let mut rng = StdRng::seed_from_u64(1);
+        let action = ai_choose_action(&state, PlayerId(0), &config, &mut rng);
+        assert!(action.is_some(), "AI should pick an action at game start");
+
+        let weight_set = EvalWeightSet::learned();
+        let score = ai_evaluate_state(
+            &state,
+            PlayerId(0),
+            weight_set.for_turn(state.turn_number),
+        );
+        assert!(score.is_finite());
+
+        let _ = ai_choose_attackers(&state, PlayerId(0));
+        let attacker_ids = attackers_against(&state, PlayerId(0));
+        let blockers = ai_choose_blockers(&state, PlayerId(0), &attacker_ids);
+        assert!(blockers.is_empty());
     }
 }
