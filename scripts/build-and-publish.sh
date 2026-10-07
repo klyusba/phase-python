@@ -7,6 +7,7 @@
 # built with the official maturin manylinux images via Docker.
 #
 # Usage:
+#   cargo update -p phase-engine &&
 #   export $(cat .env | xargs) &&
 #   ./scripts/build-and-publish.sh
 #

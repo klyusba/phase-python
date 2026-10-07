@@ -299,8 +299,8 @@ dependencies = [
 
 [[package]]
 name = "phase-ai"
-version = "0.83.0"
-source = "git+https://github.com/phase-rs/phase#05c27e0d5cbbc88e6e303aa343a71ab24904289c"
+version = "0.103.0"
+source = "git+https://github.com/phase-rs/phase#60296e29b768103d1562952c101d5719a1354d63"
 dependencies = [
  "mimalloc",
  "phase-engine",
@@ -316,8 +316,8 @@ dependencies = [
 
 [[package]]
 name = "phase-engine"
-version = "0.83.0"
-source = "git+https://github.com/phase-rs/phase#05c27e0d5cbbc88e6e303aa343a71ab24904289c"
+version = "0.103.0"
+source = "git+https://github.com/phase-rs/phase#60296e29b768103d1562952c101d5719a1354d63"
 dependencies = [
  "im",
  "indexmap",
