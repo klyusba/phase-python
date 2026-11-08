@@ -299,8 +299,8 @@ dependencies = [
 
 [[package]]
 name = "phase-ai"
-version = "0.103.0"
-source = "git+https://github.com/phase-rs/phase#60296e29b768103d1562952c101d5719a1354d63"
+version = "0.121.0"
+source = "git+https://github.com/phase-rs/phase#3ac3e117cb82054896f4ed18f1732d574a780f84"
 dependencies = [
  "mimalloc",
  "phase-engine",
@@ -315,14 +315,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "phase-ast"
+version = "0.121.0"
+source = "git+https://github.com/phase-rs/phase#3ac3e117cb82054896f4ed18f1732d574a780f84"
+dependencies = [
+ "im",
+ "nom",
+ "serde",
+ "serde_ignored",
+ "serde_json",
+ "strum",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "phase-engine"
-version = "0.103.0"
-source = "git+https://github.com/phase-rs/phase#60296e29b768103d1562952c101d5719a1354d63"
+version = "0.121.0"
+source = "git+https://github.com/phase-rs/phase#3ac3e117cb82054896f4ed18f1732d574a780f84"
 dependencies = [
  "im",
  "indexmap",
  "nom",
  "petgraph",
+ "phase-ast",
+ "phase-parser",
  "rand",
  "rand_chacha",
  "rustc-hash",
@@ -337,6 +354,21 @@ dependencies = [
  "toml",
  "tracing",
  "web-time",
+]
+
+[[package]]
+name = "phase-parser"
+version = "0.121.0"
+source = "git+https://github.com/phase-rs/phase#3ac3e117cb82054896f4ed18f1732d574a780f84"
+dependencies = [
+ "nom",
+ "phase-ast",
+ "serde",
+ "serde_json",
+ "sha2",
+ "strum",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]
