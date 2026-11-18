@@ -28,7 +28,7 @@ use engine::database::synthesis::{
     build_oracle_face as engine_build_oracle_face,
     build_oracle_face_multi as engine_build_oracle_face_multi,
 };
-use engine::database::CardDatabase;
+use engine::database::{CardDatabase, ComboTable};
 use engine::game::{
     apply, load_and_hydrate_decks, rehydrate_game_from_card_db, resolve_deck_list, start_game,
     start_game_with_starting_player, DeckList, PlayerDeckList,
@@ -153,7 +153,7 @@ fn start_match(
     let mut state = GameState::new(format_config, player_count_u8, seed);
     state.set_match_config(match_config);
 
-    let payload = resolve_deck_list(db, &deck_list);
+    let payload = resolve_deck_list(db, &ComboTable::default(), &deck_list);
     load_and_hydrate_decks(&mut state, &payload, Some(db));
     state.all_card_names = db.card_names().into();
 
