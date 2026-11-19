@@ -124,7 +124,7 @@ Legal actions for the player currently expected to act. Returns native `GameActi
 
 Apply `action` as seat `actor` (trusted seat index, `0` / `1` / …).
 
-`action` should be a `GameAction` from `actions()`. A tagged JSON dict (`{"type": "...", "data": ...}`) is still accepted.
+`action` should be a `GameAction` from `actions()` (or `GameAction.from_dict`).
 
 Clones this game, mutates the clone, and returns `(new_game, result)`. The
 receiver is left unchanged.

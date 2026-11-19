@@ -214,13 +214,6 @@ fn parse_state_value(value: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
     from_py(value)
 }
 
-fn parse_action(value: &Bound<'_, PyAny>) -> PyResult<EngineAction> {
-    if let Ok(action) = value.extract::<PyRef<'_, GameAction>>() {
-        return Ok(action.inner.clone());
-    }
-    from_py(value)
-}
-
 fn action_kind(action: &EngineAction) -> String {
     format!("{:?}", GameActionKind::from(action))
 }
@@ -365,7 +358,7 @@ impl Engine {
 /// The Rust value is held natively — listing and applying actions does not
 /// serialize through JSON. Use [`GameAction::to_dict`] only when you need the
 /// tagged JSON shape.
-#[pyclass(name = "GameAction", module = "phase", frozen)]
+#[pyclass(name = "GameAction", module = "phase", frozen, from_py_object)]
 #[derive(Clone)]
 struct GameAction {
     inner: EngineAction,
@@ -528,7 +521,7 @@ impl Game {
     /// Legal actions for the player currently expected to act.
     ///
     /// Returns [`GameAction`] objects. Pass one back to [`Game::apply`] with no
-    /// JSON conversion. Dicts in the tagged engine shape are still accepted.
+    /// JSON conversion.
     fn actions(&self) -> Vec<GameAction> {
         legal_actions(&self.state)
             .into_iter()
@@ -541,16 +534,16 @@ impl Game {
     /// Clones this game, mutates the clone, and returns `(new_game, result)`.
     /// The receiver is left unchanged.
     ///
-    /// `action` should be a [`GameAction`] from [`Game::actions`]. A tagged
-    /// JSON dict is still accepted.
+    /// `action` should be a [`GameAction`] from [`Game::actions`] (or
+    /// [`GameAction::from_dict`]).
     #[pyo3(signature = (actor, action, *, fast_forward = false))]
-    fn apply<'py>(
+    fn apply(
         &self,
         actor: u8,
-        action: Bound<'py, PyAny>,
+        action: GameAction,
         fast_forward: bool,
     ) -> PyResult<(Game, ActionResult)> {
-        let action = parse_action(&action)?;
+        let action = action.inner;
         let mut state = self.state.clone();
         let mut result: EngineActionResult =
             apply(&mut state, PlayerId(actor), action).map_err(py_err)?;
