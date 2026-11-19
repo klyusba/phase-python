@@ -105,6 +105,10 @@ class Agent:
         this seat or a planeswalker/battle they control). Returns
         `(blocker_id, attacker_id)` pairs.
         """
+    def evaluate_state(self, /, game: Game, seat: int) -> float:
+        """
+        Heuristic board evaluation from `seat`'s perspective (higher is better).
+        """
 
 @final
 class Game:
@@ -132,10 +136,6 @@ class Game:
     def battlefield(self, /) -> Any:
         """
         Objects currently on the battlefield.
-        """
-    def evaluate_state(self, /, seat: int) -> float:
-        """
-        Heuristic board evaluation from `seat`'s perspective (higher is better).
         """
     def exile(self, /) -> Any:
         """
