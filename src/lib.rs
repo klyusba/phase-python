@@ -354,10 +354,6 @@ impl Engine {
 }
 
 /// An engine `GameAction`. Returned by [`Game::actions`] and accepted by [`Game::apply`].
-///
-/// The Rust value is held natively — listing and applying actions does not
-/// serialize through JSON. Use [`GameAction::to_dict`] only when you need the
-/// tagged JSON shape.
 #[pyclass(name = "GameAction", module = "phase", frozen, from_py_object)]
 #[derive(Clone)]
 struct GameAction {
@@ -410,7 +406,7 @@ impl GameAction {
         Ok(dict)
     }
 
-    /// Tagged JSON dict. Prefer passing this object to [`Game::apply`] instead.
+    /// Tagged JSON dict.
     fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         to_py(py, &self.inner)
     }
@@ -520,8 +516,7 @@ struct Game {
 impl Game {
     /// Legal actions for the player currently expected to act.
     ///
-    /// Returns [`GameAction`] objects. Pass one back to [`Game::apply`] with no
-    /// JSON conversion.
+    /// Returns [`GameAction`] objects. Pass one back to [`Game::apply`].
     fn actions(&self) -> Vec<GameAction> {
         legal_actions(&self.state)
             .into_iter()
