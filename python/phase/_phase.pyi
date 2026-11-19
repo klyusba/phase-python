@@ -87,9 +87,12 @@ class Game:
         Returns [`GameAction`] objects. Pass one back to [`Game::apply`] with no
         JSON conversion. Dicts in the tagged engine shape are still accepted.
         """
-    def apply(self, /, actor: int, action: Any, *, fast_forward: bool = False) -> ActionResult:
+    def apply(self, /, actor: int, action: Any, *, fast_forward: bool = False) -> tuple[Game, ActionResult]:
         """
-        Apply `action` as `actor` (seat index) and return the `ActionResult`.
+        Apply `action` as `actor` (seat index).
+        
+        Clones this game, mutates the clone, and returns `(new_game, result)`.
+        The receiver is left unchanged.
         
         `action` should be a [`GameAction`] from [`Game::actions`]. A tagged
         JSON dict is still accepted.

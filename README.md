@@ -55,7 +55,7 @@ game = engine.new_game(
 )
 
 actions = game.actions()
-result = game.apply(0, actions[0])
+game, result = game.apply(0, actions[0])
 ```
 
 See [API.md](API.md) for the full Python API.

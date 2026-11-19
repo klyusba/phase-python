@@ -13,7 +13,7 @@
 //!     first_player=0,
 //! )
 //! actions = game.actions()
-//! result = game.apply(0, actions[0])
+//! game, result = game.apply(0, actions[0])
 //!
 //! saved = game.state()
 //! resumed = engine.load_game(saved)
@@ -534,32 +534,35 @@ impl Game {
             .collect()
     }
 
-    /// Apply `action` as `actor` (seat index) and return the `ActionResult`.
+    /// Apply `action` as `actor` (seat index).
+    ///
+    /// Clones this game, mutates the clone, and returns `(new_game, result)`.
+    /// The receiver is left unchanged.
     ///
     /// `action` should be a [`GameAction`] from [`Game::actions`]. A tagged
     /// JSON dict is still accepted.
     #[pyo3(signature = (actor, action, *, fast_forward = false))]
     fn apply<'py>(
-        &mut self,
+        &self,
         actor: u8,
         action: Bound<'py, PyAny>,
         fast_forward: bool,
-    ) -> PyResult<ActionResult> {
+    ) -> PyResult<(Game, ActionResult)> {
         let action = parse_action(&action)?;
+        let mut state = self.state.clone();
         let mut result: EngineActionResult =
-            apply(&mut self.state, PlayerId(actor), action).map_err(py_err)?;
+            apply(&mut state, PlayerId(actor), action).map_err(py_err)?;
         let mut fast_forwarded = 0;
 
         if fast_forward {
             loop {
-                let actions = legal_actions(&self.state);
+                let actions = legal_actions(&state);
                 if actions.len() != 1 || !matches!(actions[0], EngineAction::PassPriority) {
                     break;
                 }
 
-                let actor = self.state.priority_player;
-                let next =
-                    apply(&mut self.state, actor, EngineAction::PassPriority).map_err(py_err)?;
+                let actor = state.priority_player;
+                let next = apply(&mut state, actor, EngineAction::PassPriority).map_err(py_err)?;
                 result.events.extend(next.events);
                 result.log_entries.extend(next.log_entries);
                 result.waiting_for = next.waiting_for;
@@ -567,10 +570,13 @@ impl Game {
             }
         }
 
-        Ok(ActionResult {
-            inner: result,
-            fast_forwarded,
-        })
+        Ok((
+            Game { state },
+            ActionResult {
+                inner: result,
+                fast_forwarded,
+            },
+        ))
     }
 
     /// Choose an action for `actor` using the phase-ai search / heuristics.

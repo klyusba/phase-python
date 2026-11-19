@@ -39,7 +39,7 @@ game = engine.new_game(
 )
 
 actions = game.actions()
-result = game.apply(0, actions[0])
+game, result = game.apply(0, actions[0])
 
 saved = game.state()
 resumed = engine.load_game(saved)
@@ -120,13 +120,16 @@ A live match. The engine `GameState` is held in Rust; only snapshots and prompts
 
 Legal actions for the player currently expected to act. Returns native `GameAction` objects (no JSON). Pass one to `apply`.
 
-### `Game.apply(actor: int, action, *, fast_forward=False) -> ActionResult`
+### `Game.apply(actor: int, action, *, fast_forward=False) -> tuple[Game, ActionResult]`
 
 Apply `action` as seat `actor` (trusted seat index, `0` / `1` / …).
 
 `action` should be a `GameAction` from `actions()`. A tagged JSON dict (`{"type": "...", "data": ...}`) is still accepted.
 
-Returns a native, frozen `ActionResult`. Its `events`, `waiting_for`, and
+Clones this game, mutates the clone, and returns `(new_game, result)`. The
+receiver is left unchanged.
+
+`ActionResult` is native and frozen. Its `events`, `waiting_for`, and
 `log_entries` properties are converted to Python values on access. `to_dict()`
 returns the legacy dict shape.
 
@@ -194,7 +197,7 @@ Frozen wrapper around the engine `GameAction` enum. Listing and applying actions
 ```python
 action = game.actions()[0]
 action.kind          # e.g. "MulliganDecision", "PassPriority"
-game.apply(0, action)
+game, result = game.apply(0, action)
 ```
 
 | Member | Meaning |
