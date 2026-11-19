@@ -2,6 +2,7 @@
 
 from phase._phase import (
     ActionResult,
+    Agent,
     Engine,
     Game,
     GameAction,
@@ -11,6 +12,7 @@ from phase._phase import (
 
 __all__ = [
     "ActionResult",
+    "Agent",
     "Engine",
     "Game",
     "GameAction",

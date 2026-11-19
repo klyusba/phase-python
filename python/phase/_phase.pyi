@@ -75,6 +75,38 @@ class Engine:
         """
 
 @final
+class Agent:
+    """
+    phase-ai decision maker for a fixed difficulty preset.
+    
+    Construct once and reuse across calls — the internal `AiConfig` is built
+    at init and shared by `choose_action`, `choose_attackers`, and
+    `choose_blockers`.
+    """
+    def __init__(self, difficulty: str = "Medium") -> None:
+        """
+        Create an agent for `difficulty` (`"VeryEasy"`, `"Easy"`, `"Medium"`,
+        `"Hard"`, `"VeryHard"`, `"CEDH"`).
+        """
+    def __repr__(self, /) -> str: ...
+    def choose_action(self, /, game: Game, actor: int) -> GameAction | None:
+        """
+        Choose an action for `actor` using the phase-ai search / heuristics.
+        """
+    def choose_attackers(self, /, game: Game, actor: int) -> list[int]:
+        """
+        Choose attackers for `actor` (object IDs).
+        """
+    def choose_blockers(self, /, game: Game, actor: int) -> list[tuple[int, int]]:
+        """
+        Choose blocker assignments for `actor`.
+        
+        Attackers are taken from the current combat state (creatures attacking
+        this seat or a planeswalker/battle they control). Returns
+        `(blocker_id, attacker_id)` pairs.
+        """
+
+@final
 class Game:
     """
     A started game: inspect legal actions, apply one, and read state.
@@ -100,25 +132,6 @@ class Game:
     def battlefield(self, /) -> Any:
         """
         Objects currently on the battlefield.
-        """
-    def choose_action(self, /, actor: int, *, difficulty: str = "Medium") -> GameAction | None:
-        """
-        Choose an action for `actor` using the phase-ai search / heuristics.
-        
-        `difficulty` is an engine label (`"VeryEasy"`, `"Easy"`, `"Medium"`,
-        `"Hard"`, `"VeryHard"`, `"CEDH"`).
-        """
-    def choose_attackers(self, /, actor: int) -> list[int]:
-        """
-        Choose attackers for `actor` (object IDs).
-        """
-    def choose_blockers(self, /, actor: int) -> list[tuple[int, int]]:
-        """
-        Choose blocker assignments for `actor`.
-        
-        Attackers are taken from the current combat state (creatures attacking
-        this seat or a planeswalker/battle they control). Returns
-        `(blocker_id, attacker_id)` pairs.
         """
     def evaluate_state(self, /, seat: int) -> float:
         """

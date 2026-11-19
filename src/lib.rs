@@ -41,11 +41,13 @@ use engine::types::game_state::{
 use engine::types::identifiers::ObjectId;
 use engine::types::match_config::MatchConfig;
 use engine::types::player::PlayerId;
+use phase_ai::combat_ai::{
+    choose_attackers_with_targets_with_profile, choose_blockers_with_profile, CombatLookahead,
+};
 use phase_ai::config::ACCEPTED_DIFFICULTY_LABELS;
 use phase_ai::{
-    choose_action as ai_choose_action, choose_attackers as ai_choose_attackers,
-    choose_blockers as ai_choose_blockers, create_config_for_players,
-    evaluate_state as ai_evaluate_state, AiDifficulty, EvalWeightSet, Platform,
+    choose_action as ai_choose_action, create_config_for_players,
+    evaluate_state as ai_evaluate_state, AiConfig, AiDifficulty, EvalWeightSet, Platform,
 };
 use pyo3::exceptions::{PyAttributeError, PyValueError};
 use pyo3::prelude::*;
@@ -579,60 +581,6 @@ impl Game {
         ))
     }
 
-    /// Choose an action for `actor` using the phase-ai search / heuristics.
-    ///
-    /// `difficulty` is an engine label (`"VeryEasy"`, `"Easy"`, `"Medium"`,
-    /// `"Hard"`, `"VeryHard"`, `"CEDH"`).
-    #[pyo3(signature = (actor, *, difficulty = "Medium"))]
-    fn choose_action(
-        &self,
-        py: Python<'_>,
-        actor: u8,
-        difficulty: &str
-    ) -> PyResult<Option<GameAction>> {
-        player_or_err(&self.state, actor)?;
-        let difficulty = parse_difficulty(difficulty)?;
-        let config =
-            create_config_for_players(difficulty, Platform::Native, self.state.players.len() as u8);
-        let action = py.detach(|| {
-            let mut rng = StdRng::seed_from_u64(self.state.rng_seed);
-            ai_choose_action(&self.state, PlayerId(actor), &config, &mut rng)
-        });
-        Ok(action.map(|inner| GameAction { inner }))
-    }
-
-    /// Choose attackers for `actor` (object IDs).
-    fn choose_attackers(&self, actor: u8) -> PyResult<Vec<u64>> {
-        player_or_err(&self.state, actor)?;
-        Ok(ai_choose_attackers(&self.state, PlayerId(actor))
-            .into_iter()
-            .map(|id| id.0)
-            .collect())
-    }
-
-    /// Choose blocker assignments for `actor`.
-    ///
-    /// Attackers are taken from the current combat state (creatures attacking
-    /// this seat or a planeswalker/battle they control). Returns
-    /// `(blocker_id, attacker_id)` pairs.
-    fn choose_blockers(&self, actor: u8) -> PyResult<Vec<(u64, u64)>> {
-        player_or_err(&self.state, actor)?;
-        let player = PlayerId(actor);
-        let attacker_ids = attackers_against(&self.state, player);
-        Ok(ai_choose_blockers(&self.state, player, &attacker_ids)
-            .into_iter()
-            .map(|(blocker, attacker)| (blocker.0, attacker.0))
-            .collect())
-    }
-
-    /// Heuristic board evaluation from `seat`'s perspective (higher is better).
-    fn evaluate_state(&self, seat: u8) -> PyResult<f64> {
-        player_or_err(&self.state, seat)?;
-        let weight_set = EvalWeightSet::learned();
-        let weights = weight_set.for_turn(self.state.turn_number);
-        Ok(ai_evaluate_state(&self.state, PlayerId(seat), weights))
-    }
-
     /// Full persisted `GameState` as a Python dict (same serde shape as WASM export).
     ///
     /// Pass the result to [`Engine::load_game`] to resume from this snapshot.
@@ -748,6 +696,92 @@ impl Game {
     }
 }
 
+/// phase-ai decision maker for a fixed difficulty preset.
+#[pyclass(module = "phase")]
+struct Agent {
+    config: AiConfig,
+}
+
+#[pymethods]
+impl Agent {
+    /// Create an agent for `difficulty` (`"VeryEasy"`, `"Easy"`, `"Medium"`,
+    /// `"Hard"`, `"VeryHard"`, `"CEDH"`).
+    #[new]
+    #[pyo3(signature = (difficulty = "Medium"))]
+    fn new(difficulty: &str) -> PyResult<Self> {
+        let difficulty = parse_difficulty(difficulty)?;
+        let config = create_config_for_players(difficulty, Platform::Native, 2);
+        Ok(Self { config })
+    }
+
+    /// Choose an action for `actor` using the phase-ai search / heuristics.
+    fn choose_action(
+        &self,
+        py: Python<'_>,
+        game: &Game,
+        actor: u8,
+    ) -> PyResult<Option<GameAction>> {
+        player_or_err(&game.state, actor)?;
+        let action = py.detach(|| {
+            let mut rng = StdRng::seed_from_u64(game.state.rng_seed);
+            ai_choose_action(&game.state, PlayerId(actor), &self.config, &mut rng)
+        });
+        Ok(action.map(|inner| GameAction { inner }))
+    }
+
+    /// Choose attackers for `actor` (object IDs).
+    fn choose_attackers(&self, game: &Game, actor: u8) -> PyResult<Vec<u64>> {
+        player_or_err(&game.state, actor)?;
+        Ok(
+            choose_attackers_with_targets_with_profile(
+                &game.state,
+                PlayerId(actor),
+                &self.config.profile,
+                CombatLookahead::from_config(&self.config),
+                None,
+                None,
+                None,
+            )
+            .into_iter()
+            .map(|(id, _)| id.0)
+            .collect(),
+        )
+    }
+
+    /// Choose blocker assignments for `actor`.
+    ///
+    /// Attackers are taken from the current combat state (creatures attacking
+    /// this seat or a planeswalker/battle they control). Returns
+    /// `(blocker_id, attacker_id)` pairs.
+    fn choose_blockers(&self, game: &Game, actor: u8) -> PyResult<Vec<(u64, u64)>> {
+        player_or_err(&game.state, actor)?;
+        let player = PlayerId(actor);
+        let attacker_ids = attackers_against(&game.state, player);
+        Ok(choose_blockers_with_profile(
+            &game.state,
+            player,
+            &attacker_ids,
+            &self.config.profile,
+            None,
+        )
+        .into_iter()
+        .map(|(blocker, attacker)| (blocker.0, attacker.0))
+        .collect())
+    }
+
+    /// Heuristic board evaluation from `seat`'s perspective (higher is better).
+    fn evaluate_state(&self, game: &Game, seat: u8) -> PyResult<f64> {
+        player_or_err(&game.state, seat)?;
+        let weight_set = EvalWeightSet::learned();
+        let weights = weight_set.for_turn(game.state.turn_number);
+        Ok(ai_evaluate_state(&game.state, PlayerId(seat), weights))
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Agent(difficulty={:?})", self.config.difficulty)
+    }
+}
+
 /// Python bindings for the phase.rs Magic: The Gathering rules engine.
 // Declared as an inline module because introspection (and therefore stub
 // generation) does not cover function-style `#[pymodule]` declarations.
@@ -755,7 +789,7 @@ impl Game {
 mod _phase {
     #[pymodule_export]
     use super::{
-        build_oracle_face, build_oracle_face_multi, ActionResult, Engine, Game, GameAction,
+        build_oracle_face, build_oracle_face_multi, ActionResult, Agent, Engine, Game, GameAction,
     };
 }
 
@@ -870,9 +904,23 @@ mod tests {
         );
         assert!(score.is_finite());
 
-        let _ = ai_choose_attackers(&state, PlayerId(0));
+        let _ = choose_attackers_with_targets_with_profile(
+            &state,
+            PlayerId(0),
+            &config.profile,
+            CombatLookahead::from_config(&config),
+            None,
+            None,
+            None,
+        );
         let attacker_ids = attackers_against(&state, PlayerId(0));
-        let blockers = ai_choose_blockers(&state, PlayerId(0), &attacker_ids);
+        let blockers = choose_blockers_with_profile(
+            &state,
+            PlayerId(0),
+            &attacker_ids,
+            &config.profile,
+            None,
+        );
         assert!(blockers.is_empty());
     }
 }

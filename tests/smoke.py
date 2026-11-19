@@ -1,4 +1,4 @@
-from phase import Engine
+from phase import Agent, Engine
 
 engine = Engine.from_path("fixtures/forest.json")
 game = engine.new_game(
@@ -15,7 +15,8 @@ saved = game.state()
 resumed = engine.load_game(saved)
 actions = resumed.actions()
 
-score = game.evaluate_state(0)
-choice = game.choose_action(0, difficulty="Easy")
-attackers = game.choose_attackers(0)
-blockers = game.choose_blockers(0)
+agent = Agent("Easy")
+choice = agent.choose_action(game, 0)
+attackers = agent.choose_attackers(game, 0)
+blockers = agent.choose_blockers(game, 0)
+score = agent.evaluate_state(game, 0)
