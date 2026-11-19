@@ -299,8 +299,8 @@ dependencies = [
 
 [[package]]
 name = "phase-ai"
-version = "0.129.0"
-source = "git+https://github.com/phase-rs/phase#cc4c09ccd7a9e72835a467b7a08a7e86bb55e1f3"
+version = "0.130.0"
+source = "git+https://github.com/phase-rs/phase#47f3647dcab399738473de05af33be821be779e2"
 dependencies = [
  "mimalloc",
  "nom",
@@ -317,8 +317,8 @@ dependencies = [
 
 [[package]]
 name = "phase-ast"
-version = "0.129.0"
-source = "git+https://github.com/phase-rs/phase#cc4c09ccd7a9e72835a467b7a08a7e86bb55e1f3"
+version = "0.130.0"
+source = "git+https://github.com/phase-rs/phase#47f3647dcab399738473de05af33be821be779e2"
 dependencies = [
  "im",
  "nom",
@@ -332,8 +332,8 @@ dependencies = [
 
 [[package]]
 name = "phase-engine"
-version = "0.129.0"
-source = "git+https://github.com/phase-rs/phase#cc4c09ccd7a9e72835a467b7a08a7e86bb55e1f3"
+version = "0.130.0"
+source = "git+https://github.com/phase-rs/phase#47f3647dcab399738473de05af33be821be779e2"
 dependencies = [
  "im",
  "indexmap",
@@ -359,8 +359,8 @@ dependencies = [
 
 [[package]]
 name = "phase-parser"
-version = "0.129.0"
-source = "git+https://github.com/phase-rs/phase#cc4c09ccd7a9e72835a467b7a08a7e86bb55e1f3"
+version = "0.130.0"
+source = "git+https://github.com/phase-rs/phase#47f3647dcab399738473de05af33be821be779e2"
 dependencies = [
  "nom",
  "phase-ast",
